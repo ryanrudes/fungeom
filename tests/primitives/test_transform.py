@@ -31,6 +31,19 @@ def test_compose_inverse_slerp() -> None:
     assert np.allclose(half.resolve().translation, [5, 0, 0])
 
 
+def test_apply_and_decompose() -> None:
+    spin = Transform.rotation(Vec3.of(0, 0, 1), Scalar.of(np.pi / 2))
+    # a free vector is rotated only (no translation)
+    assert np.allclose(spin.transform_vector(Vec3.of(1, 0, 0)).resolve(), [0, 1, 0], atol=1e-9)
+    assert np.allclose(spin.transform_direction(Direction3.of(1, 0, 0)).resolve().vector, [0, 1, 0], atol=1e-9)
+    moved = spin @ Transform.translation(Vec3.of(3, 0, 0))
+    assert np.allclose(moved.translation_part().resolve(), [0, 3, 0], atol=1e-9)  # R·t
+    # rotation_part strips translation but keeps the rotation
+    rot_only = moved.rotation_part().resolve()
+    assert np.allclose(rot_only.translation, [0, 0, 0], atol=1e-9)
+    assert np.allclose(rot_only.apply_point([1, 0, 0]), [0, 1, 0], atol=1e-9)
+
+
 def test_partialities_and_propagation(bad: object) -> None:
     assert isinstance(Transform.rotation(Vec3.of(0, 0, 0), Scalar.of(1)).decide(), Unresolvable)  # zero axis
     bad_scalar = bad.scalar  # type: ignore[attr-defined]

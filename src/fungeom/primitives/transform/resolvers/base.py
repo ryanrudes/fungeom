@@ -15,7 +15,9 @@ class Transform(Resolver[RigidTransform]):
 
     Construct with :meth:`identity`, :meth:`translation`, :meth:`rotation`, or
     :meth:`known` (wrapping a :class:`~fungeom.RigidTransform` value);
-    compose with ``@`` (:meth:`compose`), :meth:`inverse`, :meth:`slerp`.
+    compose with ``@`` (:meth:`compose`), :meth:`inverse`, :meth:`slerp`; apply
+    to geometry with :meth:`transform_vector` / :meth:`transform_direction`, and
+    decompose with :meth:`translation_part` / :meth:`rotation_part`.
     ``resolve()`` yields a :class:`~fungeom.RigidTransform`
     (``Transform.Value``), which applies to points and vectors.
 
@@ -84,3 +86,27 @@ class Transform(Resolver[RigidTransform]):
         from fungeom.primitives.transform.resolvers.slerp import SlerpTransform
 
         return SlerpTransform(a=self, b=other, t=as_scalar_resolver(t))
+
+    def transform_vector(self, vector: Vec3) -> Vec3:
+        """Apply this transform to a free ``vector`` — rotated only, not translated."""
+        from fungeom.primitives.transform.resolvers.applied_vector import TransformedVec3
+
+        return TransformedVec3(transform=self, vector=vector)
+
+    def transform_direction(self, direction: Direction3) -> Direction3:
+        """Apply this transform's rotation to a ``direction`` (the result stays unit length)."""
+        from fungeom.primitives.transform.resolvers.applied_direction import TransformedDirection3
+
+        return TransformedDirection3(transform=self, direction=direction)
+
+    def translation_part(self) -> Vec3:
+        """This transform's translation component, as a vector."""
+        from fungeom.primitives.transform.resolvers.translation_part import TranslationPart
+
+        return TranslationPart(transform=self)
+
+    def rotation_part(self) -> Transform:
+        """This transform with its translation dropped — the rotation alone."""
+        from fungeom.primitives.transform.resolvers.rotation_part import RotationPart
+
+        return RotationPart(transform=self)
