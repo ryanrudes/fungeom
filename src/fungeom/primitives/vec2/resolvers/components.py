@@ -17,11 +17,11 @@ from fungeom.primitives.vec2.value import as_vec2
 class ComponentVec2(Vec2):
     """``(x, y)`` from two scalar resolvers."""
 
-    x: Scalar
-    y: Scalar
+    cx: Scalar
+    cy: Scalar
 
     def _decide(self) -> Vec2Decision:
-        decided = gather([self.x.decide(), self.y.decide()])
+        decided = gather([self.cx.decide(), self.cy.decide()])
         if isinstance(decided, Unresolvable):
             return decided
         return Resolvable(as_vec2(np.array(decided.value, dtype=np.float64)))

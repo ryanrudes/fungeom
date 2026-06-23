@@ -29,7 +29,7 @@ class Vec2(Resolver[Float2]):
                 from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
                 from fungeom.primitives.vec2.resolvers.components import ComponentVec2
 
-                return ComponentVec2(x=as_scalar_resolver(x), y=as_scalar_resolver(y))
+                return ComponentVec2(cx=as_scalar_resolver(x), cy=as_scalar_resolver(y))
             literal.append(component)
 
         from fungeom.primitives.vec2.resolvers.literal import LiteralVec2
@@ -90,6 +90,37 @@ class Vec2(Resolver[Float2]):
         from fungeom.primitives.vec2.resolvers.lerp import LerpVec2
 
         return LerpVec2(a=self, b=other, t=as_scalar_resolver(t))
+
+    def x(self) -> Scalar:
+        """The x component, as a deferred scalar."""
+        from fungeom.primitives.vec2.resolvers.coordinate import Vec2Coordinate
+
+        return Vec2Coordinate(vector=self, axis=0)
+
+    def y(self) -> Scalar:
+        """The y component, as a deferred scalar."""
+        from fungeom.primitives.vec2.resolvers.coordinate import Vec2Coordinate
+
+        return Vec2Coordinate(vector=self, axis=1)
+
+    def angle_to(self, other: Vec2) -> Scalar:
+        """The unsigned angle (radians) to ``other`` (Unresolvable if either vector is zero)."""
+        from fungeom.primitives.vec2.resolvers.angle import Vec2Angle
+
+        return Vec2Angle(a=self, b=other)
+
+    def with_norm(self, length: float | Scalar) -> Vec2:
+        """This direction rescaled to ``length`` (Unresolvable if this is the zero vector)."""
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+        from fungeom.primitives.vec2.resolvers.resized import ResizedVec2
+
+        return ResizedVec2(vector=self, length=as_scalar_resolver(length))
+
+    def perpendicular(self) -> Vec2:
+        """This vector turned 90° counter-clockwise — ``(-y, x)``."""
+        from fungeom.primitives.vec2.resolvers.perpendicular import PerpendicularVec2
+
+        return PerpendicularVec2(vector=self)
 
     def __add__(self, other: Vec2) -> Vec2:
         from fungeom.primitives.vec2.resolvers.sum import SumVec2

@@ -39,6 +39,17 @@ def test_project_reject_and_partialities() -> None:
     assert isinstance(p.reject_from(Vec2.of(0, 0)).decide(), Unresolvable)
 
 
+def test_components_angle_perpendicular_with_norm() -> None:
+    v = Vec2.of(3, 4)
+    assert v.x().resolve() == 3.0
+    assert v.y().resolve() == 4.0
+    assert np.isclose(Vec2.of(1, 0).angle_to(Vec2.of(0, 1)).resolve(), np.pi / 2)
+    assert np.allclose(Vec2.of(3, 0).perpendicular().resolve(), [0, 3])
+    assert np.allclose(Vec2.of(0, 3).with_norm(10).resolve(), [0, 10])
+    assert isinstance(Vec2.of(0, 0).angle_to(Vec2.of(1, 0)).decide(), Unresolvable)
+    assert isinstance(Vec2.of(0, 0).with_norm(5).decide(), Unresolvable)
+
+
 def test_value_rejects_wrong_shape() -> None:
     from fungeom.values import Float2  # noqa: F401  (documents the runtime value type)
     from fungeom.primitives.vec2.value import as_vec2

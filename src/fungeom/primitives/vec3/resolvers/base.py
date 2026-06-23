@@ -33,7 +33,7 @@ class Vec3(Resolver[Float3]):
                 from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
                 from fungeom.primitives.vec3.resolvers.components import ComponentVec3
 
-                return ComponentVec3(x=as_scalar_resolver(x), y=as_scalar_resolver(y), z=as_scalar_resolver(z))
+                return ComponentVec3(cx=as_scalar_resolver(x), cy=as_scalar_resolver(y), cz=as_scalar_resolver(z))
             literal.append(component)
 
         from fungeom.primitives.vec3.resolvers.literal import LiteralVec3
@@ -94,6 +94,37 @@ class Vec3(Resolver[Float3]):
         from fungeom.primitives.vec3.resolvers.lerp import LerpVec3
 
         return LerpVec3(a=self, b=other, t=as_scalar_resolver(t))
+
+    def x(self) -> Scalar:
+        """The x component, as a deferred scalar."""
+        from fungeom.primitives.vec3.resolvers.coordinate import Vec3Coordinate
+
+        return Vec3Coordinate(vector=self, axis=0)
+
+    def y(self) -> Scalar:
+        """The y component, as a deferred scalar."""
+        from fungeom.primitives.vec3.resolvers.coordinate import Vec3Coordinate
+
+        return Vec3Coordinate(vector=self, axis=1)
+
+    def z(self) -> Scalar:
+        """The z component, as a deferred scalar."""
+        from fungeom.primitives.vec3.resolvers.coordinate import Vec3Coordinate
+
+        return Vec3Coordinate(vector=self, axis=2)
+
+    def angle_to(self, other: Vec3) -> Scalar:
+        """The unsigned angle (radians) to ``other`` (Unresolvable if either vector is zero)."""
+        from fungeom.primitives.vec3.resolvers.angle import Vec3Angle
+
+        return Vec3Angle(a=self, b=other)
+
+    def with_norm(self, length: float | Scalar) -> Vec3:
+        """This direction rescaled to ``length`` (Unresolvable if this is the zero vector)."""
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+        from fungeom.primitives.vec3.resolvers.resized import ResizedVec3
+
+        return ResizedVec3(vector=self, length=as_scalar_resolver(length))
 
     def __add__(self, other: Vec3) -> Vec3:
         from fungeom.primitives.vec3.resolvers.sum import SumVec3

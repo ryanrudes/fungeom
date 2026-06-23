@@ -22,12 +22,12 @@ from fungeom.primitives.vec3.value import as_vec3
 class ComponentVec3(Vec3):
     """``(x, y, z)`` from three scalar resolvers."""
 
-    x: Scalar
-    y: Scalar
-    z: Scalar
+    cx: Scalar
+    cy: Scalar
+    cz: Scalar
 
     def _decide(self) -> Vec3Decision:
-        decided = gather([self.x.decide(), self.y.decide(), self.z.decide()])
+        decided = gather([self.cx.decide(), self.cy.decide(), self.cz.decide()])
         if isinstance(decided, Unresolvable):
             return decided
         return Resolvable(as_vec3(np.array(decided.value, dtype=np.float64)))

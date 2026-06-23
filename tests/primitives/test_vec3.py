@@ -49,6 +49,20 @@ def test_normalized_project_reject_and_partialities() -> None:
     assert isinstance(a.reject_from(Vec3.of(0, 0, 0)).decide(), Unresolvable)
 
 
+def test_components_angle_and_with_norm() -> None:
+    v = Vec3.of(3, 4, 12)
+    assert v.x().resolve() == 3.0
+    assert v.y().resolve() == 4.0
+    assert v.z().resolve() == 12.0
+    assert np.isclose(Vec3.of(1, 0, 0).angle_to(Vec3.of(0, 1, 0)).resolve(), np.pi / 2)
+    assert np.isclose(Vec3.of(1, 0, 0).angle_to(Vec3.of(1, 0, 0)).resolve(), 0.0)
+    assert np.allclose(Vec3.of(0, 3, 4).with_norm(10).resolve(), [0, 6, 8])
+    # partialities: angle/length need a direction
+    assert isinstance(Vec3.of(0, 0, 0).angle_to(Vec3.of(1, 0, 0)).decide(), Unresolvable)
+    assert isinstance(Vec3.of(1, 0, 0).angle_to(Vec3.of(0, 0, 0)).decide(), Unresolvable)
+    assert isinstance(Vec3.of(0, 0, 0).with_norm(5).decide(), Unresolvable)
+
+
 def test_value_rejects_wrong_shape() -> None:
     import pytest
 
