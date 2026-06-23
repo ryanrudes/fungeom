@@ -15,7 +15,8 @@ class Frame(Resolver[CoordinateFrame]):
 
     Use :attr:`world` (the root), :meth:`detached` (a frame not yet placed), or
     :meth:`known` (wrapping a :class:`~fungeom.CoordinateFrame` value), and
-    build trees with :meth:`attach`. ``resolve()`` world-anchors the frame
+    build trees with :meth:`attach`; :meth:`relative_to` gives the transform
+    between two frames. ``resolve()`` world-anchors the frame
     (flattening its chain to a single transform off the world frame); a frame
     whose chain does not reach the world is
     :class:`~fungeom.Unresolvable` — see :meth:`decide`.
@@ -47,3 +48,12 @@ class Frame(Resolver[CoordinateFrame]):
         from fungeom.primitives.transform.resolvers.literal import as_transform_resolver
 
         return AttachedFrame(parent=self, name=name, to_parent=as_transform_resolver(to_parent))
+
+    def relative_to(self, other: Frame) -> Transform:
+        """The transform re-expressing this frame's coordinates in ``other``.
+
+        Unresolvable if either frame is not grounded to the world.
+        """
+        from fungeom.primitives.frame.resolvers.relative import FrameTransform
+
+        return FrameTransform(frame=self, other=other)

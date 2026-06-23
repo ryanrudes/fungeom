@@ -38,6 +38,16 @@ def test_attach_propagates_unresolvability(bad: object, xlate: Callable[..., Rig
     assert isinstance(Frame.world.attach("t", bad.transform).decide(), Unresolvable)  # type: ignore[attr-defined]
 
 
+def test_relative_to(xlate: Callable[..., RigidTransform]) -> None:
+    a = Frame.world.attach("a", xlate(10, 0, 0))
+    b = Frame.world.attach("b", xlate(0, 5, 0))
+    # a's coordinates re-expressed in b: undo b, then apply a
+    assert np.allclose(a.relative_to(b).resolve().translation, [10, -5, 0])
+    # partial: a frame that isn't grounded has no placement
+    assert isinstance(a.relative_to(Frame.detached("loose")).decide(), Unresolvable)
+    assert isinstance(Frame.detached("loose").relative_to(a).decide(), Unresolvable)
+
+
 def test_coordinate_frame_value_methods(xlate: Callable[..., RigidTransform]) -> None:
     assert WORLD_FRAME.is_grounded
     assert WORLD_FRAME.world() is WORLD_FRAME  # the root flattens to itself
