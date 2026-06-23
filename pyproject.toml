@@ -20,10 +20,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Typing :: Typed",
 ]
-
-[project.urls]
-Repository = "https://github.com/ryanrudes/fungeom"
-Issues = "https://github.com/ryanrudes/fungeom/issues"
 dependencies = [
     "numpy>=2.4.6",
     "scipy>=1.17.1",
@@ -37,6 +33,10 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
 ]
+
+[project.urls]
+Repository = "https://github.com/ryanrudes/fungeom"
+Issues = "https://github.com/ryanrudes/fungeom/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fungeom"]
