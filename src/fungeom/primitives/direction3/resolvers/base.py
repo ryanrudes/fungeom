@@ -13,7 +13,8 @@ class Direction3(Resolver[Direction3Value]):
 
     Construct with :meth:`of` (from components, normalized) or :meth:`towards`
     (the direction of a :class:`~fungeom.Vec3`); compose with
-    :meth:`reversed`, :meth:`angle_to`, :meth:`slerp`, :meth:`as_vector`.
+    :meth:`reversed`, :meth:`angle_to`, :meth:`slerp`, :meth:`as_vector`,
+    :meth:`dot`, :meth:`cross`.
     ``resolve()`` yields a ``Direction3.Value``, whose ``vector`` is always unit
     length by construction.
 
@@ -77,3 +78,15 @@ class Direction3(Resolver[Direction3Value]):
         from fungeom.primitives.direction3.resolvers.vector import DirectionVec3
 
         return DirectionVec3(direction=self)
+
+    def dot(self, other: Direction3) -> Scalar:
+        """The dot product with ``other`` — the cosine of the angle between them."""
+        from fungeom.primitives.direction3.resolvers.dot import Direction3Dot
+
+        return Direction3Dot(a=self, b=other)
+
+    def cross(self, other: Direction3) -> Direction3:
+        """The unit direction perpendicular to both (Unresolvable if ``other`` is parallel)."""
+        from fungeom.primitives.direction3.resolvers.cross import CrossDirection3
+
+        return CrossDirection3(a=self, b=other)

@@ -29,8 +29,22 @@ def test_reversed_angle_slerp_as_vector() -> None:
     assert np.allclose(x.as_vector().resolve(), [1, 0, 0])
 
 
+def test_dot_and_cross() -> None:
+    x, y = Direction3.of(1, 0, 0), Direction3.of(0, 1, 0)
+    assert x.dot(y).resolve() == pytest.approx(0.0)
+    assert x.dot(x).resolve() == pytest.approx(1.0)
+    assert x.dot(x.reversed()).resolve() == pytest.approx(-1.0)
+    assert np.allclose(x.cross(y).resolve().vector, [0, 0, 1])
+
+
 def test_slerp_antipodal_is_unresolvable() -> None:
     assert isinstance(Direction3.of(1, 0, 0).slerp(Direction3.of(-1, 0, 0), 0.5).decide(), Unresolvable)
+
+
+def test_cross_of_parallel_is_unresolvable() -> None:
+    x = Direction3.of(1, 0, 0)
+    assert isinstance(x.cross(x).decide(), Unresolvable)  # parallel
+    assert isinstance(x.cross(x.reversed()).decide(), Unresolvable)  # antiparallel
 
 
 def test_value_enforces_unit_length_eagerly() -> None:
