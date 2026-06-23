@@ -16,6 +16,7 @@ from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.transform.resolvers.base import Transform
 from fungeom.primitives.vec3.resolvers.base import Vec3
 from fungeom.primitives.vec3.resolvers.literal import vec3_resolver
 from fungeom.primitives.vec3.value import Float3, as_vec3
@@ -29,7 +30,7 @@ class Point3(Resolver[Point3Value]):
     :meth:`translate`, :meth:`midpoint`, :meth:`lerp`, :meth:`displacement_to`
     (→ :class:`~fungeom.Vec3`), :meth:`distance_to`
     (→ :class:`~fungeom.Scalar`), :meth:`direction_to`
-    (→ :class:`~fungeom.Direction3`).
+    (→ :class:`~fungeom.Direction3`), :meth:`transformed_by`, :meth:`reflect_across`.
 
     ``resolve()`` is *world-anchoring*: it returns a ``Point3.Value`` re-expressed
     in the world frame. A point whose frame is *detached* (not grounded to the
@@ -122,3 +123,15 @@ class Point3(Resolver[Point3Value]):
         from fungeom.primitives.direction3.resolvers.normalized import as_direction
 
         return as_direction(self.displacement_to(other))
+
+    def transformed_by(self, transform: Transform) -> Point3:
+        """This point moved by a rigid ``transform`` — a motion in the world frame."""
+        from fungeom.primitives.point3.resolvers.transformed import TransformedPoint3
+
+        return TransformedPoint3(point=self, transform=transform)
+
+    def reflect_across(self, center: Point3) -> Point3:
+        """This point reflected through ``center`` (central symmetry: ``2·center − self``)."""
+        from fungeom.primitives.point3.resolvers.reflected import ReflectedPoint3
+
+        return ReflectedPoint3(point=self, center=center)

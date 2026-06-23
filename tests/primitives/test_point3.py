@@ -69,6 +69,17 @@ def test_displacement_distance_direction() -> None:
     assert np.allclose(a.direction_to(b).resolve().vector, [0, 0.6, 0.8])
 
 
+def test_transformed_by_and_reflect_across() -> None:
+    p = Point3.at(1, 0, 0)
+    spin = Transform.rotation(Vec3.of(0, 0, 1), Scalar.of(np.pi / 2))
+    assert np.allclose(p.transformed_by(spin).resolve().coord, [0, 1, 0], atol=1e-9)  # rotated about origin
+    shift = Transform.translation(Vec3.of(5, 0, 0))
+    assert np.allclose(p.transformed_by(shift).resolve().coord, [6, 0, 0])  # translated
+    # central symmetry through a center
+    assert np.allclose(Point3.at(1, 2, 3).reflect_across(Point3.at(0, 0, 0)).resolve().coord, [-1, -2, -3])
+    assert np.allclose(Point3.at(1, 2, 3).reflect_across(Point3.at(1, 1, 1)).resolve().coord, [1, 0, -1])
+
+
 def test_centroid_list_generator_and_empty() -> None:
     pts = [Point3.at(0, 0, 0), Point3.at(3, 0, 0), Point3.at(0, 3, 0)]
     assert np.allclose(Point3.centroid(pts).resolve().coord, [1, 1, 0])
