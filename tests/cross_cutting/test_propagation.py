@@ -54,6 +54,12 @@ CASES: dict[str, Callable[[], object]] = {
     "scalar.clamp.hi": lambda: GOOD_S.clamp(GOOD_S, BAD_S),
     "scalar.abs": lambda: abs(BAD_S),
     "scalar.sqrt": lambda: BAD_S.sqrt(),
+    "scalar.sign": lambda: BAD_S.sign(),
+    "scalar.floor": lambda: BAD_S.floor(),
+    "scalar.ceil": lambda: BAD_S.ceil(),
+    "scalar.round": lambda: BAD_S.round(),
+    "scalar.mod.lhs": lambda: BAD_S.mod(GOOD_S),
+    "scalar.mod.rhs": lambda: GOOD_S.mod(BAD_S),
     # vec3
     "vec3.add.lhs": lambda: BAD_V3 + GOOD_V3,
     "vec3.add.rhs": lambda: GOOD_V3 + BAD_V3,
@@ -72,6 +78,11 @@ CASES: dict[str, Callable[[], object]] = {
     "vec3.rej.onto": lambda: GOOD_V3.reject_from(BAD_V3),
     "vec3.norm": lambda: BAD_V3.norm(),
     "vec3.normalized": lambda: BAD_V3.normalized(),
+    "vec3.coord": lambda: BAD_V3.x(),
+    "vec3.angle.lhs": lambda: BAD_V3.angle_to(GOOD_V3),
+    "vec3.angle.rhs": lambda: GOOD_V3.angle_to(BAD_V3),
+    "vec3.with_norm.vec": lambda: BAD_V3.with_norm(GOOD_S),
+    "vec3.with_norm.len": lambda: GOOD_V3.with_norm(BAD_S),
     # vec2
     "vec2.add.lhs": lambda: BAD_V2 + GOOD_V2,
     "vec2.add.rhs": lambda: GOOD_V2 + BAD_V2,
@@ -91,6 +102,12 @@ CASES: dict[str, Callable[[], object]] = {
     "vec2.components": lambda: Vec2.of(BAD_S, GOOD_S),
     "vec2.norm": lambda: BAD_V2.norm(),
     "vec2.normalized": lambda: BAD_V2.normalized(),
+    "vec2.coord": lambda: BAD_V2.x(),
+    "vec2.angle.lhs": lambda: BAD_V2.angle_to(GOOD_V2),
+    "vec2.angle.rhs": lambda: GOOD_V2.angle_to(BAD_V2),
+    "vec2.with_norm.vec": lambda: BAD_V2.with_norm(GOOD_S),
+    "vec2.with_norm.len": lambda: GOOD_V2.with_norm(BAD_S),
+    "vec2.perpendicular": lambda: BAD_V2.perpendicular(),
     # transform
     "tf.compose.a": lambda: BAD_T @ GOOD_T,
     "tf.compose.b": lambda: GOOD_T @ BAD_T,
@@ -101,6 +118,12 @@ CASES: dict[str, Callable[[], object]] = {
     "tf.rotation.axis": lambda: Transform.rotation(BAD_V3, GOOD_S),
     "tf.rotation.angle": lambda: Transform.rotation(GOOD_V3, BAD_S),
     "tf.translation": lambda: Transform.translation(BAD_V3),
+    "tf.apply_vec.tf": lambda: BAD_T.transform_vector(GOOD_V3),
+    "tf.apply_vec.vec": lambda: GOOD_T.transform_vector(BAD_V3),
+    "tf.apply_dir.tf": lambda: BAD_T.transform_direction(GOOD_D),
+    "tf.apply_dir.dir": lambda: GOOD_T.transform_direction(BAD_D),
+    "tf.translation_part": lambda: BAD_T.translation_part(),
+    "tf.rotation_part": lambda: BAD_T.rotation_part(),
     # direction
     "dir.reversed": lambda: BAD_D.reversed(),
     "dir.angle.lhs": lambda: BAD_D.angle_to(GOOD_D),
@@ -110,9 +133,15 @@ CASES: dict[str, Callable[[], object]] = {
     "dir.slerp.t": lambda: GOOD_D.slerp(GOOD_D, BAD_S),
     "dir.as_vector": lambda: BAD_D.as_vector(),
     "dir.towards": lambda: Direction3.towards(BAD_V3),
+    "dir.dot.lhs": lambda: BAD_D.dot(GOOD_D),
+    "dir.dot.rhs": lambda: GOOD_D.dot(BAD_D),
+    "dir.cross.lhs": lambda: BAD_D.cross(GOOD_D),
+    "dir.cross.rhs": lambda: GOOD_D.cross(BAD_D),
     # frame
     "frame.attach.parent": lambda: BAD_F.attach("x", GOOD_T),
     "frame.attach.transform": lambda: GOOD_F.attach("x", BAD_T),
+    "frame.relative.frame": lambda: BAD_F.relative_to(GOOD_F),
+    "frame.relative.other": lambda: GOOD_F.relative_to(BAD_F),
     # point
     "pt.midpoint.a": lambda: BAD_P.midpoint(GOOD_P),
     "pt.midpoint.b": lambda: GOOD_P.midpoint(BAD_P),
@@ -126,6 +155,10 @@ CASES: dict[str, Callable[[], object]] = {
     "pt.centroid": lambda: Point3.centroid([GOOD_P, BAD_P]),
     "pt.affine.point": lambda: Point3.affine([GOOD_P, BAD_P], [1, 1]),
     "pt.affine.weight": lambda: Point3.affine([GOOD_P, GOOD_P], [BAD_S, GOOD_S]),
+    "pt.transformed.pt": lambda: BAD_P.transformed_by(GOOD_T),
+    "pt.transformed.tf": lambda: GOOD_P.transformed_by(BAD_T),
+    "pt.reflect.pt": lambda: BAD_P.reflect_across(GOOD_P),
+    "pt.reflect.center": lambda: GOOD_P.reflect_across(BAD_P),
 }
 
 

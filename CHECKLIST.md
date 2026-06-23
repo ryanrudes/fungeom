@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 147 tests · **100 % line coverage** (enforced via
+**Current status:** 189 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -37,6 +37,26 @@ tests/
 ├── primitives/            # one file per primitive (test_scalar.py, … test_point3.py)
 └── cross_cutting/         # propagation (all combinators × positions), viz, values, examples
 ```
+
+---
+
+## Completeness-audit ledger
+
+The **`/audit-primitives`** task sweeps each primitive for **missing constructors
+and combinators**, implements the worthwhile ones to the definition of done
+above, documents and tests them, and ticks them into the per-primitive tables. It
+records progress here and **skips any primitive already ticked**. A primitive is
+ticked only once the audit has been fully run on it *and* the gate is green.
+
+| Primitive | Audited | When | Notes |
+| --- | :-: | --- | --- |
+| Scalar | ✅ | 2026-06-23 | Added `sign`, `floor`, `ceil`, `round`, `mod` (partial at 0). Deferred: `reciprocal` (≡ `1/x`), `lerp` (trivial), `exp`/`log`/trig/`atan2` (transcendental family — add together if needed). |
+| Vec2 | ✅ | 2026-06-23 | Added `x`/`y`, `angle_to` (partial: either zero), `with_norm` (partial: zero), `perpendicular`. Deferred: `distance_to`/`midpoint` (trivial), `clamp_norm`, `reflect`, `from_angle`/`angle` (need scalar trig), axis-unit constructors (trivial via `of`). |
+| Vec3 | ✅ | 2026-06-23 | Added `x`/`y`/`z`, `angle_to` (partial: either zero), `with_norm` (partial: zero). Deferred: `distance_to`/`midpoint` (trivial), `clamp_norm`, `reflect`, axis-unit constructors (trivial via `of`). |
+| Direction3 | ✅ | 2026-06-23 | Added `dot` (total cosine), `cross` (partial: parallel). Deferred: `rotated_by(Transform)` (lives on `Transform.transform_direction` — layering), `any_perpendicular`, azimuth/elevation constructor. |
+| Transform | ✅ | 2026-06-23 | Added `transform_vector`, `transform_direction`, `translation_part`, `rotation_part` (all total). Deferred: `rotation_between`/`look_at` constructors (axis ambiguity), `pow`/scaled interpolation (≈ `identity.slerp`), `from_quaternion`/`from_euler` (value-level `RigidTransform.from_rotation` exists). |
+| Frame | ✅ | 2026-06-23 | Added `relative_to` → `Transform` (partial: either ungrounded). Deferred: `from_transform` (≡ `world.attach`), `to_world_transform` (≡ `relative_to(Frame.world)`). |
+| Point3 | ✅ | 2026-06-23 | Added `transformed_by` (rigid motion), `reflect_across` (central symmetry) — both total. Deferred: `barycentric` (≡ `affine`), `as_vector_from` (≡ `displacement_to`), reframe/express-in-frame (value-level `Point3Value.to_frame` exists; resolver form needs a frame-typed target API). |
 
 ---
 
@@ -70,6 +90,9 @@ tests/
 | `min` / `max` | `MinScalar` / `MaxScalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `sqrt` | `SqrtScalar` | ✅ | ✅ | ✅ | ✅ (negative) | ✅ | ✅ |
 | `clamp` | `ClampScalar` | ✅ | ✅ | ✅ | ✅ (`low>high`) | ✅ | ✅ |
+| `sign` | `SignScalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `floor` / `ceil` / `round` | `FloorScalar` / `CeilScalar` / `RoundScalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `mod` | `ModScalar` | ✅ | ✅ | ✅ | ✅ (`mod 0`) | ✅ | ✅ |
 
 ## Vec3 — value: `Float3` · Vec2 — value: `Float2`
 
@@ -88,6 +111,10 @@ Rows below apply to **both** Vec3 and Vec2 (Vec2 `cross` is the scalar perp-dot)
 | `lerp` | `LerpVec*` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `project_onto` | `ProjectedVec*` | ✅ | ✅ | ✅ | ✅ (onto zero) | ✅ | ✅ |
 | `reject_from` | `RejectedVec*` | ✅ | ✅ | ✅ | ✅ (onto zero) | ✅ | ✅ |
+| `x` / `y` / `z` (`z` Vec3 only) | `Vec*Coordinate` → `Scalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `angle_to` | `Vec*Angle` → `Scalar` | ✅ | ✅ | ✅ | ✅ (either zero) | ✅ | ✅ |
+| `with_norm` | `ResizedVec*` | ✅ | ✅ | ✅ | ✅ (zero) | ✅ | ✅ |
+| `perpendicular` (Vec2 only) | `PerpendicularVec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
 ## Direction3 — value: `Direction3Value` (unit-length, enforced)
 
@@ -102,6 +129,8 @@ Both are partial at the origin (the zero vector has no direction).
 | `angle_to` | `Direction3Angle` → `Scalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `slerp` | `SlerpDirection3` | ✅ | ✅ | ✅ | ✅ (antipodal) | ✅ | ✅ |
 | `as_vector` | `DirectionVec3` → `Vec3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `dot` | `Direction3Dot` → `Scalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `cross` | `CrossDirection3` | ✅ | ✅ | ✅ | ✅ (parallel) | ✅ | ✅ |
 
 ## Transform — value: `RigidTransform` (SE(3))
 
@@ -116,6 +145,10 @@ Both are partial at the origin (the zero vector has no direction).
 | `@` compose | `ComposedTransform` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `inverse` | `InverseTransform` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `slerp` | `SlerpTransform` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `transform_vector` | `TransformedVec3` → `Vec3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `transform_direction` | `TransformedDirection3` → `Direction3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `translation_part` | `TranslationPart` → `Vec3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `rotation_part` | `RotationPart` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
 ## Frame — value: `CoordinateFrame`
 
@@ -126,6 +159,7 @@ Resolving is partial when the frame is not grounded to the world.
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | `world` / `detached` / `known` | `KnownFrame` | ✅ | ✅ | ✅ | ✅ (ungrounded) | — | ✅ |
 | `attach` | `AttachedFrame` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
+| `relative_to` | `FrameTransform` → `Transform` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
 
 ## Point3 — value: `Point3Value` (a framed position)
 
@@ -144,6 +178,8 @@ Resolving world-anchors; partial when the frame is ungrounded.
 | `displacement_to` | `DisplacementVec3` → `Vec3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `distance_to` | (composed) → `Scalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `direction_to` | (composed) → `Direction3` | ✅ | ✅ | ✅ | ✅ (coincident) | ✅ | ✅ |
+| `transformed_by` | `TransformedPoint3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `reflect_across` | `ReflectedPoint3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
 ---
 
