@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python:*)",
+      "Bash(.venv/bin/python3:*)",
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(.venv/bin/ruff:*)",
+      "Bash(.venv/bin/mypy:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(mypy:*)",
+      "Bash(uv:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)"
+    ]
+  }
+}

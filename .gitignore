@@ -1,0 +1,23 @@
+# Python bytecode / packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environment
+.venv/
+
+# Tooling caches / reports
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editor / OS
+.DS_Store
+
+# Claude Code: personal (machine-local) settings — shared settings.json IS tracked
+.claude/settings.local.json
