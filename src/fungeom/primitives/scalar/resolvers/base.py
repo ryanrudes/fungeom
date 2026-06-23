@@ -16,7 +16,8 @@ class Scalar(Resolver[float]):
 
     Construct one with :meth:`of`; compose with the usual operators
     (``+ - * / **``, ``abs``) and :meth:`min`, :meth:`max`, :meth:`sqrt`,
-    :meth:`clamp` — each returns a new ``Scalar``. ``resolve()`` yields a
+    :meth:`clamp`, :meth:`sign`, :meth:`floor`, :meth:`ceil`, :meth:`round`,
+    :meth:`mod` — each returns a new ``Scalar``. ``resolve()`` yields a
     ``float`` (``Scalar.Value``). Bare numbers passed to these methods are lifted
     into literal scalars automatically, so ``v.scale(2.0)`` and
     ``v.scale(other.norm())`` both work.
@@ -111,3 +112,34 @@ class Scalar(Resolver[float]):
         from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
 
         return ClampScalar(value=self, low=as_scalar_resolver(low), high=as_scalar_resolver(high))
+
+    def sign(self) -> Scalar:
+        """The sign of this scalar: ``-1``, ``0``, or ``1`` (as a float)."""
+        from fungeom.primitives.scalar.resolvers.sign import SignScalar
+
+        return SignScalar(value=self)
+
+    def floor(self) -> Scalar:
+        """The greatest integer ≤ this scalar (as a float)."""
+        from fungeom.primitives.scalar.resolvers.floor import FloorScalar
+
+        return FloorScalar(value=self)
+
+    def ceil(self) -> Scalar:
+        """The least integer ≥ this scalar (as a float)."""
+        from fungeom.primitives.scalar.resolvers.ceil import CeilScalar
+
+        return CeilScalar(value=self)
+
+    def round(self) -> Scalar:
+        """This scalar rounded to the nearest integer (ties to even; as a float)."""
+        from fungeom.primitives.scalar.resolvers.round import RoundScalar
+
+        return RoundScalar(value=self)
+
+    def mod(self, modulus: float | Scalar) -> Scalar:
+        """This scalar modulo ``modulus`` (Unresolvable if ``modulus`` resolves to zero)."""
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+        from fungeom.primitives.scalar.resolvers.modulo import ModScalar
+
+        return ModScalar(value=self, modulus=as_scalar_resolver(modulus))

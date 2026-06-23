@@ -36,9 +36,27 @@ def test_min_max_abs_sqrt_clamp() -> None:
     assert Scalar.of(2.0).clamp(0.0, 3.0).resolve() == 2.0
 
 
+def test_sign_floor_ceil_round() -> None:
+    assert Scalar.of(-3.5).sign().resolve() == -1.0
+    assert Scalar.of(0.0).sign().resolve() == 0.0
+    assert Scalar.of(2.5).sign().resolve() == 1.0
+    assert Scalar.of(2.7).floor().resolve() == 2.0
+    assert Scalar.of(-2.1).floor().resolve() == -3.0
+    assert Scalar.of(2.1).ceil().resolve() == 3.0
+    assert Scalar.of(-2.9).ceil().resolve() == -2.0
+    assert Scalar.of(2.5).round().resolve() == 2.0  # ties to even
+    assert Scalar.of(3.5).round().resolve() == 4.0
+
+
+def test_mod() -> None:
+    assert Scalar.of(7.0).mod(3.0).resolve() == 1.0
+    assert Scalar.of(-1.0).mod(3.0).resolve() == 2.0  # result follows the modulus' sign
+
+
 def test_partialities() -> None:
     assert isinstance((Scalar.of(1.0) / Scalar.of(0.0)).decide(), Unresolvable)  # /0
     assert isinstance(Scalar.of(-1.0).sqrt().decide(), Unresolvable)  # sqrt(<0)
     assert isinstance((Scalar.of(-1.0) ** Scalar.of(0.5)).decide(), Unresolvable)  # complex
     assert isinstance((Scalar.of(0.0) ** Scalar.of(-1.0)).decide(), Unresolvable)  # 0 ** -1
     assert isinstance(Scalar.of(2.0).clamp(3.0, 0.0).decide(), Unresolvable)  # low > high
+    assert isinstance(Scalar.of(1.0).mod(0.0).decide(), Unresolvable)  # mod 0
