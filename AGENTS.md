@@ -88,6 +88,14 @@ for partial cases → add a unit test, a partiality test, and propagation cases
 (one per resolver input position) → add a README combinator-table row → tick the
 checklist row → confirm `ruff` + `mypy` + `pytest --cov` (100%).
 
+To sweep an *existing* primitive for **missing** constructors/combinators (rather
+than add a known one), run the **`/audit-primitives`** task
+([`.claude/commands/audit-primitives.md`](.claude/commands/audit-primitives.md)):
+it finds the gaps, implements/documents/tests the worthwhile ones to the same
+definition of done, and records progress in the
+[`CHECKLIST.md`](CHECKLIST.md) audit ledger — skipping primitives already audited
+there.
+
 ## Gotchas (learned the hard way)
 
 - **Never name a module `types.py`** — it shadows the stdlib `types` when a script
