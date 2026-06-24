@@ -15,6 +15,7 @@ import pytest
 from fungeom import (
     CoordinateFrame,
     Coverage,
+    Direction2,
     Direction3,
     Direction3Signal,
     Duration,
@@ -54,6 +55,7 @@ BAD_V3, GOOD_V3 = Vec3.of(0, 0, 0).normalized(), Vec3.of(1, 0, 0)
 BAD_V2, GOOD_V2 = Vec2.of(0, 0).normalized(), Vec2.of(1, 0)
 BAD_T, GOOD_T = Transform.rotation(Vec3.of(0, 0, 0), Scalar.of(1)), Transform.identity()
 BAD_D, GOOD_D = Direction3.of(0, 0, 0), Direction3.of(1, 0, 0)
+BAD_D2, GOOD_D2 = Direction2.of(0, 0), Direction2.of(1, 0)
 BAD_F, GOOD_F = Frame.detached("loose"), Frame.world
 BAD_P = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
 GOOD_P = Point3.at(0, 0, 0)
@@ -214,6 +216,16 @@ CASES: dict[str, Callable[[], object]] = {
     "dir.cross.lhs": lambda: BAD_D.cross(GOOD_D),
     "dir.cross.rhs": lambda: GOOD_D.cross(BAD_D),
     "dir.any_perpendicular": lambda: BAD_D.any_perpendicular(),
+    "dir2.of.scalar": lambda: Direction2.of(BAD_S, GOOD_S),
+    "dir2.towards": lambda: Direction2.towards(BAD_V2),
+    "dir2.reversed": lambda: BAD_D2.reversed(),
+    "dir2.perpendicular": lambda: BAD_D2.perpendicular(),
+    "dir2.angle": lambda: BAD_D2.angle(),
+    "dir2.angle_to.lhs": lambda: BAD_D2.angle_to(GOOD_D2),
+    "dir2.angle_to.rhs": lambda: GOOD_D2.angle_to(BAD_D2),
+    "dir2.dot.lhs": lambda: BAD_D2.dot(GOOD_D2),
+    "dir2.dot.rhs": lambda: GOOD_D2.dot(BAD_D2),
+    "dir2.as_vector": lambda: BAD_D2.as_vector(),
     # frame
     "frame.attach.parent": lambda: BAD_F.attach("x", GOOD_T),
     "frame.attach.transform": lambda: GOOD_F.attach("x", BAD_T),

@@ -13,6 +13,7 @@ package (scalar / vec3 / direction3 / transform / point3, over one generic core)
 
 from fungeom.primitives.boolean import Bool
 from fungeom.primitives.coverage import Coverage, CoverageValue
+from fungeom.primitives.direction2 import Direction2, Direction2Value
 from fungeom.primitives.direction3 import Direction3, Direction3Value
 from fungeom.primitives.duration import Duration
 from fungeom.primitives.frame import WORLD_FRAME, CoordinateFrame, Frame
@@ -58,6 +59,7 @@ __all__ = [
     "Scalar",
     "Vec2",
     "Vec3",
+    "Direction2",
     "Direction3",
     "Transform",
     "Frame",
@@ -111,5 +113,6 @@ __all__ = [
     "LineValue",
     "RayValue",
     "SegmentValue",
+    "Direction2Value",
     "Direction3Value",
 ]

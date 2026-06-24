@@ -129,6 +129,7 @@ particular inputs, discovered by deciding.
 | `Bool` | `of`, `true`, `false` | `and_` (`&`), `or_` (`|`), `not_` (`~`) | — (total; strict propagation, not Kleene) |
 | `Scalar` | `of` | `+ - * / **`, `min`, `max`, `abs`, `sqrt`, `clamp`, `sign`, `floor`, `ceil`, `round`, `mod`, `lt`/`le`/`gt`/`ge` (→ `Bool`) | `/0`, `sqrt(<0)`, `(-x)**½`, `0**-1`, `clamp` with `low > high`, `mod 0` |
 | `Vec2` / `Vec3` | `of` | `+ -`, `scale`, `norm`, `normalized`, `dot`, `cross`, `lerp`, `project_onto`, `reject_from`, `x`/`y`/`z`, `angle_to`, `with_norm`, `perpendicular` (2D) | `normalize(0⃗)`, project/reject onto `0⃗`, `angle_to`/`with_norm` of `0⃗` |
+| `Direction2` | `of`, `towards`, `from_angle` | `reversed`, `perpendicular` (unique in 2D), `angle` (→ `Scalar`), `angle_to`, `dot`, `as_vector` | direction of `0⃗` |
 | `Direction3` | `of`, `towards` | `reversed`, `angle_to`, `slerp`, `as_vector`, `dot`, `cross`, `any_perpendicular` | direction of `0⃗`; `slerp` of antipodes; `cross` of parallels |
 | `Transform` | `identity`, `known`, `translation`, `rotation` | `@` (compose), `inverse`, `slerp`, `transform_vector`, `transform_direction`, `translation_part`, `rotation_part` | `rotation` about the zero axis |
 | `Frame` | `world`, `detached`, `known` | `attach(name, transform)`, `relative_to` | detached (ungrounded) frame |

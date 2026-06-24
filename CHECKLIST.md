@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 716 tests · **100 % line coverage** (enforced via
+**Current status:** 731 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -61,6 +61,7 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Plane | — | (newly built 2026-06-24) | **New primitive** (the surface/patch-definition vocabulary). Built directly with its intended surface (`through`/`through_points`/`spanned_by`; `normal`/`origin`/`project`/`signed_distance`/`distance_to`/`contains`/`facing`/`flipped`/`offset`/`project_direction`/`frame`/`winding_normal`) + the `Point3Bundle.fit_plane` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators. |
 | Line | — | (newly built 2026-06-24) | **New primitive** (the tangent/axis vocabulary, sibling to `Plane`). Built directly with its intended surface (`through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along`) + the `Point3Bundle.fit_line` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators (e.g. an `angle_to`/`intersection`/`closest_approach` between two lines, a `point_at(t)`). |
 | Ray | — | (newly built 2026-06-24) | **New primitive** (the half-line; completes Line/Ray/Segment). `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed` — `project`/`distance_to` clamp behind the origin, `point_at` partial for a negative distance. **Completeness-audit pending** (e.g. `intersect` a plane → `Point3`, `to_line`). |
+| Direction2 | — | (newly built 2026-06-24) | **New primitive** — the first member of the **2D geometry stack** (mirrors `Direction3`). `of`/`towards`/`from_angle`; `reversed`/`perpendicular`/`angle`/`angle_to`/`dot`/`as_vector`. **Completeness-audit pending** (e.g. `slerp`/`rotate(angle)`, a signed `angle_to`). |
 | Segment | — | (newly built 2026-06-24) | **New primitive** (the finite segment / bone). `between`; `start`/`end`/`direction`/`length`/`midpoint`/`project`/`distance_to`/`contains`/`at`/`parameter_of`/`reversed` — clamps to the endpoints; `direction` partial when degenerate, `at` partial outside `[0,1]`. **Completeness-audit pending** (e.g. `to_line`/`to_ray`, `closest_approach` between two segments). |
 | Duration | ✅ | 2026-06-23 | Added `min`, `max` (total), `clamp(low,high)` (partial low>high), and order comparisons `lt`/`le`/`gt`/`ge` → `Bool` (signed order; reuse the generic `LessThan`/`LessEqual`) — mirror Scalar. Deferred: `between` (≡ `Instant.duration_to`), `sign`/`hz` (niche). |
 | Instant | ✅ | 2026-06-23 | Added `min`, `max` (earliest/latest, total; time is ordered), `centroid` (partial empty), `affine` (partial empty/Σw=0) — mirror Point3 + 1-D order. Deferred: `clamp` (≡ `Interval.clamp`), `before`/`after` (need `Bool`). |
@@ -165,6 +166,26 @@ Rows below apply to **both** Vec3 and Vec2 (Vec2 `cross` is the scalar perp-dot)
 | `angle_to` | `Vec*Angle` → `Scalar` | ✅ | ✅ | ✅ | ✅ (either zero) | ✅ | ✅ |
 | `with_norm` | `ResizedVec*` | ✅ | ✅ | ✅ | ✅ (zero) | ✅ | ✅ |
 | `perpendicular` (Vec2 only) | `PerpendicularVec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+
+## Direction2 — value: `Direction2Value` (unit-length, enforced)
+
+The 2D sibling of `Direction3` (the first member of the **2D geometry stack**). Layer:
+above `vec2`/`scalar`. **Constructors:** `of(x,y)` (normalized; deferred if a component
+is a `Scalar`), `towards(vec)`, `from_angle(θ)`. In 2D a direction has a *unique*
+perpendicular (a quarter turn) and a single oriented angle, so it carries `perpendicular`
+and `angle` where `Direction3` needs `cross`/`any_perpendicular`.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `of` | `LiteralDirection2` / `NormalizedDirection2` | ✅ | ✅ | ✅ | ✅ (zero) | ✅ | ✅ |
+| `towards` | `NormalizedDirection2` | ✅ | ✅ | ✅ | ✅ (zero) | ✅ | ✅ |
+| `from_angle` | `LiteralDirection2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `reversed` | `ReversedDirection2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `perpendicular` | `PerpendicularDirection2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `angle` → `Scalar` | `Direction2OrientedAngle` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `angle_to` → `Scalar` | `Direction2AngleTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `dot` → `Scalar` | `Direction2Dot` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `as_vector` → `Vec2` | `Direction2Vec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
 ## Direction3 — value: `Direction3Value` (unit-length, enforced)
 
