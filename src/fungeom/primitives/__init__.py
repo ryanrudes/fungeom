@@ -21,12 +21,15 @@ from fungeom.primitives.frame2 import WORLD_FRAME2, CoordinateFrame2, Frame2
 from fungeom.primitives.instant import Instant
 from fungeom.primitives.interval import Interval, IntervalValue
 from fungeom.primitives.line import Line, LineValue
+from fungeom.primitives.line2 import Line2, Line2Value
 from fungeom.primitives.plane import Plane, PlaneValue
 from fungeom.primitives.point2 import Point2, Point2Value
 from fungeom.primitives.point3 import Point3, Point3Value
 from fungeom.primitives.ray import Ray, RayValue
+from fungeom.primitives.ray2 import Ray2, Ray2Value
 from fungeom.primitives.sampling import Sampling, SamplingValue
 from fungeom.primitives.segment import Segment, SegmentValue
+from fungeom.primitives.segment2 import Segment2, Segment2Value
 from fungeom.primitives.scalar import Scalar
 from fungeom.primitives.signals import (
     Boundary,
@@ -72,8 +75,11 @@ __all__ = [
     "Point3",
     "Plane",
     "Line",
+    "Line2",
     "Ray",
+    "Ray2",
     "Segment",
+    "Segment2",
     # temporal
     "Duration",
     "Instant",
@@ -122,8 +128,11 @@ __all__ = [
     "Point3Value",
     "PlaneValue",
     "LineValue",
+    "Line2Value",
     "RayValue",
+    "Ray2Value",
     "SegmentValue",
+    "Segment2Value",
     "Direction2Value",
     "Direction3Value",
 ]

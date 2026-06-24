@@ -27,9 +27,13 @@ def test_compose_inverse_and_decompose() -> None:
     assert np.allclose(composed.apply_point(np.array([1.0, 0.0])), [1, 1], atol=1e-9)
     # inverse undoes
     assert (shift @ shift.inverse()).resolve().approx_equal(RigidTransform2.identity())
-    # decompose: angle and rotation_part (translation dropped)
+    # decompose: angle and rotation_part. Use a transform with BOTH rotation and translation
+    # so the assertion is not vacuous — rotation_part must *keep* the rotation and *drop* the shift.
     assert np.isclose(quarter.angle().resolve(), np.pi / 2)
-    assert np.isclose(shift.rotation_part().angle().resolve(), 0.0)  # a pure translation has no rotation
+    both = shift @ quarter  # a quarter turn then a +x shift
+    rotation_only = both.rotation_part().resolve()
+    assert np.isclose(rotation_only.angle(), np.pi / 2)  # rotation preserved
+    assert np.allclose(rotation_only.translation, [0, 0])  # translation dropped
 
 
 def test_deferred_resolvability_propagates() -> None:

@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 785 tests · **100 % line coverage** (enforced via
+**Current status:** 846 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -62,6 +62,7 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Line | — | (newly built 2026-06-24) | **New primitive** (the tangent/axis vocabulary, sibling to `Plane`). Built directly with its intended surface (`through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along`) + the `Point3Bundle.fit_line` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators (e.g. an `angle_to`/`intersection`/`closest_approach` between two lines, a `point_at(t)`). |
 | Ray | — | (newly built 2026-06-24) | **New primitive** (the half-line; completes Line/Ray/Segment). `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed` — `project`/`distance_to` clamp behind the origin, `point_at` partial for a negative distance. **Completeness-audit pending** (e.g. `intersect` a plane → `Point3`, `to_line`). |
 | Direction2 | — | (newly built 2026-06-24) | **New primitive** — the first member of the **2D geometry stack** (mirrors `Direction3`). `of`/`towards`/`from_angle`; `reversed`/`perpendicular`/`angle`/`angle_to`/`dot`/`as_vector`. **Completeness-audit pending** (e.g. `slerp`/`rotate(angle)`, a signed `angle_to`). |
+| Line2 / Ray2 / Segment2 | — | (newly built 2026-06-24) | **New primitives** — the 2D line family (the 2D-stack shapes). `Line2` merges the `Line` + `Plane` roles (a 2D line is a hyperplane: it carries `normal`/`signed_distance`); `Ray2`/`Segment2` mirror `Ray`/`Segment` with the same clamp/range partiality. Built over `Point2`/`Direction2`. **Completeness-audit pending** (e.g. `Line2.intersect`, `Segment2.to_line2`). |
 | Point2 | — | (newly built 2026-06-24) | **New primitive** — the framed 2D position, capstone of the 2D stack (mirrors `Point3`). `at`/`in_frame`/`centroid`/`affine`; `translate`/`lerp`/`midpoint`/`displacement_to`→`Vec2`/`distance_to`/`direction_to`→`Direction2`/`transformed_by`(`Transform2`)/`reflect_across`. World-anchors on resolve; ungrounded frame → Unresolvable. **Completeness-audit pending**. |
 | Frame2 | — | (newly built 2026-06-24) | **New primitive** — the 2D frame tree (mirrors `Frame`; rooted at `WORLD_FRAME2`, edges are `RigidTransform2`). `world`/`detached`/`known`/`attach`/`relative_to`→`Transform2`. Resolving is partial for an ungrounded frame. **Completeness-audit pending**. |
 | Transform2 | — | (newly built 2026-06-24) | **New primitive** — SE(2), the 2D rigid-motion member of the stack (mirrors `Transform`; a rotation is a single angle, so `rotation` is total). `identity`/`known`/`translation`/`rotation`; `@`/`inverse`/`transform_vector`/`transform_direction`/`translation_part`/`rotation_part`/`angle`. Note the `RotationTransform2.radians` field (avoids shadowing `Transform2.angle()` — the field/method trap). **Completeness-audit pending** (e.g. `slerp`, `from_point_pairs`). |
@@ -411,6 +412,40 @@ point) but has no `direction`. Same layer as `Line` (above `point3`/`direction3`
 | `at` → `Point3` | `SegmentAt` | ✅ | ✅ | ✅ | ✅ (parameter outside [0,1]) | ✅ | ✅ |
 | `parameter_of` → `Scalar` | `SegmentParameterOf` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `reversed` | `SegmentReversed` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+
+---
+
+## Line2 — value: `Line2Value` (an oriented 2D line / hyperplane)
+
+The 2D shapes (the line family of the **2D geometry stack**), above `point2`/`direction2`.
+In the plane a line *is* a hyperplane, so `Line2` carries both the line algebra and a
+`normal` + `signed_distance` (the `Plane` role). Oriented: the left normal is a quarter
+turn from the direction.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `through` / `through_points` | `Line2Through` / `Line2ThroughPoints` | ✅ | ✅ | ✅ | ✅ (coincident) | ✅ | ✅ |
+| `direction` / `origin` / `normal` | `Line2Direction` / `Line2Origin` / `Line2Normal` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `project` → `Point2` | `Line2Project` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `signed_distance` / `distance_to` → `Scalar` | `Line2SignedDistance` / `Line2DistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+
+## Ray2 — value: `Ray2Value` (a 2D half-line) · Segment2 — value: `Segment2Value` (a finite 2D segment)
+
+The planar `Ray` and `Segment` — identical semantics to their 3D siblings (`project` /
+`distance_to` clamp; `Ray2.point_at` partial for a negative distance; `Segment2.at`
+partial outside `[0, 1]`; degenerate `Segment2.direction` is Unresolvable), over `Point2`
+/ `Direction2` / `Vec2`.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `Ray2.through` / `from_to` | `Ray2Through` / `Ray2FromTo` | ✅ | ✅ | ✅ | ✅ (coincident) | ✅ | ✅ |
+| `Ray2` origin/direction/project/distance_to/contains | `Ray2Origin` / `Ray2Direction` / `Ray2Project` / `Ray2DistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `Ray2.point_at` / `reversed` | `Ray2PointAt` / `Ray2Reversed` | ✅ | ✅ | ✅ | ✅ (negative dist) | ✅ | ✅ |
+| `Segment2.between` | `Segment2Between` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `Segment2` start/end/length/midpoint/project/distance_to | `Segment2Start` / `…End` / `…Length` / `…Midpoint` / `…Project` / `…DistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `Segment2.direction` | `Segment2Direction` | ✅ | ✅ | ✅ | ✅ (degenerate) | ✅ | ✅ |
+| `Segment2.at` / `parameter_of` / `contains` / `reversed` | `Segment2At` / `…ParameterOf` / (composed) / `…Reversed` | ✅ | ✅ | ✅ | ✅ (at outside [0,1]) | ✅ | ✅ |
 
 ---
 
