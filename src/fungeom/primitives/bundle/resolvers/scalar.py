@@ -10,7 +10,13 @@ import numpy as np
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
-from fungeom.primitives.bundle.resolvers.base import Bundle, decide_gathered, decide_member_at, decide_where
+from fungeom.primitives.bundle.resolvers.base import (
+    Bundle,
+    decide_gathered,
+    decide_member_at,
+    decide_where,
+    decide_zipped,
+)
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.scalar.decidability import ScalarDecision
 from fungeom.primitives.scalar.resolvers.base import Scalar
@@ -61,6 +67,26 @@ class ScalarBundle(Bundle[float]):
         """The average of the present values (→ ``Scalar``); Unresolvable if none are."""
         return _ScalarBundleMean(bundle=self)
 
+    def sum(self) -> Scalar:
+        """The sum of the present values (→ ``Scalar``); ``0`` over an empty bundle."""
+        return _ScalarBundleSum(bundle=self)
+
+    def __add__(self, other: ScalarBundle) -> ScalarBundle:
+        """Key-aligned sum with ``other`` (on the intersection of present keys)."""
+        return _SumScalarBundle(a=self, b=other)
+
+    def __sub__(self, other: ScalarBundle) -> ScalarBundle:
+        """Key-aligned difference with ``other``."""
+        return _DiffScalarBundle(a=self, b=other)
+
+    def __mul__(self, other: ScalarBundle) -> ScalarBundle:
+        """Key-aligned product with ``other``."""
+        return _ProductScalarBundle(a=self, b=other)
+
+    def __truediv__(self, other: ScalarBundle) -> ScalarBundle:
+        """Key-aligned quotient with ``other`` (Unresolvable at a key where the divisor is zero)."""
+        return _QuotientScalarBundle(a=self, b=other)
+
 
 @dataclass(frozen=True, eq=False)
 class _GatheredScalarBundle(ScalarBundle):
@@ -104,3 +130,52 @@ class _ScalarBundleMean(Scalar):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _ScalarBundleSum(Scalar):
+    bundle: ScalarBundle
+
+    def _decide(self) -> ScalarDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                return Resolvable(float(sum(collection.members[key] for key in collection.support())))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _SumScalarBundle(ScalarBundle):
+    a: ScalarBundle
+    b: ScalarBundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key) + self.b.at(key))
+
+
+@dataclass(frozen=True, eq=False)
+class _DiffScalarBundle(ScalarBundle):
+    a: ScalarBundle
+    b: ScalarBundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key) - self.b.at(key))
+
+
+@dataclass(frozen=True, eq=False)
+class _ProductScalarBundle(ScalarBundle):
+    a: ScalarBundle
+    b: ScalarBundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key) * self.b.at(key))
+
+
+@dataclass(frozen=True, eq=False)
+class _QuotientScalarBundle(ScalarBundle):
+    a: ScalarBundle
+    b: ScalarBundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key) / self.b.at(key))

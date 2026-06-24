@@ -64,9 +64,9 @@ BAD_TL, GOOD_TL = Timeline.detached("loose"), Timeline.master
 BAD_SAMP, GOOD_SAMP = Sampling.at_times([1, 0]), Sampling.at_times([0, 1])
 BAD_SIG = ScalarSignal.from_samples([1, 0], [1, 2])
 GOOD_SIG = ScalarSignal.from_samples([0, 1, 2], [10, 20, 30])
-BAD_BUNDLE = Point3Bundle.of([BAD_P])  # a detached-frame member
-BAD_VB = Vec3Bundle.of([BAD_V3])
-BAD_SB = ScalarBundle.of([BAD_S])
+BAD_BUNDLE, GOOD_PB = Point3Bundle.of([BAD_P]), Point3Bundle.of([GOOD_P])
+BAD_VB, GOOD_VB = Vec3Bundle.of([BAD_V3]), Vec3Bundle.of([GOOD_V3])
+BAD_SB, GOOD_SB = ScalarBundle.of([BAD_S]), ScalarBundle.of([GOOD_S])
 BAD_DB = Direction3Bundle.of([BAD_D])
 BAD_TB = TransformBundle.of([BAD_T])
 BAD_VSIG = Vec3Signal.from_samples([1, 0], [[0, 0, 0], [1, 1, 1]])
@@ -445,6 +445,29 @@ CASES: dict[str, Callable[[], object]] = {
     "tbundle.of": lambda: TransformBundle.of([BAD_T]),
     "tbundle.at": lambda: BAD_TB.at(0),
     "tbundle.where": lambda: BAD_TB.where([0]),
+    # bundle algebra — zip (lift), folds, broadcast
+    "sbundle.add.lhs": lambda: BAD_SB + GOOD_SB,
+    "sbundle.add.rhs": lambda: GOOD_SB + BAD_SB,
+    "sbundle.sub.lhs": lambda: BAD_SB - GOOD_SB,
+    "sbundle.sub.rhs": lambda: GOOD_SB - BAD_SB,
+    "sbundle.mul.lhs": lambda: BAD_SB * GOOD_SB,
+    "sbundle.mul.rhs": lambda: GOOD_SB * BAD_SB,
+    "sbundle.div.num": lambda: BAD_SB / GOOD_SB,
+    "sbundle.div.den": lambda: GOOD_SB / BAD_SB,
+    "sbundle.sum": lambda: BAD_SB.sum(),
+    "vbundle.add.lhs": lambda: BAD_VB + GOOD_VB,
+    "vbundle.add.rhs": lambda: GOOD_VB + BAD_VB,
+    "vbundle.sub.lhs": lambda: BAD_VB - GOOD_VB,
+    "vbundle.sub.rhs": lambda: GOOD_VB - BAD_VB,
+    "vbundle.dot.lhs": lambda: BAD_VB.dot(GOOD_VB),
+    "vbundle.dot.rhs": lambda: GOOD_VB.dot(BAD_VB),
+    "vbundle.sum": lambda: BAD_VB.sum(),
+    "pbundle.displacement.lhs": lambda: BAD_BUNDLE.displacement_to(GOOD_PB),
+    "pbundle.displacement.rhs": lambda: GOOD_PB.displacement_to(BAD_BUNDLE),
+    "pbundle.distance.lhs": lambda: BAD_BUNDLE.distance_to(GOOD_PB),
+    "pbundle.distance.rhs": lambda: GOOD_PB.distance_to(BAD_BUNDLE),
+    "pbundle.transformed_by.source": lambda: BAD_BUNDLE.transformed_by(GOOD_T),
+    "pbundle.transformed_by.transform": lambda: GOOD_PB.transformed_by(BAD_T),
 }
 
 

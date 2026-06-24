@@ -311,7 +311,7 @@ core < … < point3
 | Phase | Delivers |
 | --- | --- |
 | **1** | `Bundle[V]` core + `BundleValue[V]` + per-type facades; construction, `at`/`present`/`count`/`where`; first-class support — **DONE, all five facades** (`Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3` `Bundle`): generic core + shared `decide_gathered`/`decide_where`/`decide_member_at`; `of`/`from_array`/`from_map` (+ wider `roster` for absent keys), `at`→ primitive, `where`, and a fold (`centroid`/`mean`; `Direction3.mean` partial; `Transform` none — SE(3) is numerics); strict construction |
-| **2** | the algebra — functor lifts, `zip`-by-key, folds (`centroid`/`count`); broadcast |
+| **2** | the algebra — `zip`-by-key (lift on the key *intersection*: `Scalar` `+ - * /`, `Vec3` `+ -`/`dot`, `Point3` `displacement_to`/`distance_to`), broadcast (`transformed_by`), folds (`sum`) — **DONE** (`decide_zipped` + `decide_mapped` helpers, mirroring signal lifting) |
 | **3** | over-time: the bundle `Blend` (elementwise lift) so `Signal[Bundle[V]]` works; `traverse`/`distribute`; the `(T, N)` occlusion mask |
 | **4** | sparse encoding for anonymous / variable-`N` clouds |
 | **R** | **reserved:** `Roster` + `RosterMap` (entity grounding + correspondence) — the retarget seam; build when pulled, not speculatively |
@@ -360,9 +360,11 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
 - **Build rung 2, reserve rung 3:** `Roster`/`RosterMap` are written into the
   roadmap (the retarget seam is too central to omit) but not built until pulled.
 
-**Status:** spine + **phase 1 complete** — all five bundle facades
+**Status:** spine + **phases 1–2 complete** — all five bundle facades
 (`Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3`) are built and gated: the generic
 `Bundle[V]` core + `BundleValue[V]` + shared decide helpers, first-class maskable
 support, strict construction, `of`/`from_array`/`from_map`, `at`/`present`/`count`/
-`where`, and per-type folds. Phase 2 (zip-by-key, broadcast, more folds) is next; the
-rest follows the staged roadmap, one phase at a time, each to the gate.
+`where`, per-type folds, **and the key-aligned algebra** (`zip` lift on the key
+intersection, `broadcast` map, `sum`). Phase 3 (over-time `Signal[Bundle]` via the
+elementwise `Blend` + `traverse`) is next; the rest follows the staged roadmap, one
+phase at a time, each to the gate.

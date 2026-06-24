@@ -12,7 +12,7 @@ imported normally.
 
 from __future__ import annotations
 
-from collections.abc import Hashable
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 from typing import Any
 
@@ -95,6 +95,60 @@ def decide_member_at[V](bundle: Bundle[V], key: Hashable) -> Resolvability[V]:
             if not collection.present(key):
                 return Unresolvable(f"key {key!r} is absent from the bundle")
             return Resolvable(collection.at(key))
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def decide_zipped[U](
+    a: Bundle[Any],
+    b: Bundle[Any],
+    combine: Callable[[Hashable], Resolver[U]],
+) -> Resolvability[BundleValue[U]]:
+    """Lift a pointwise op over two bundles, aligned on the *intersection* of their keys.
+
+    A nominal axis has nothing to reconstruct a missing key from, so — unlike a
+    signal, which unions sample instants — a bundle *intersects*: the result holds
+    exactly the keys present in **both** operands (in the left operand's order).
+    ``combine(key)`` builds the per-key combination via the ordinary static algebra
+    (e.g. ``a.at(key) + b.at(key)``), so its partiality flows through — a scalar
+    quotient is Unresolvable where the divisor is zero. The result is fully present
+    over its intersected roster; an empty intersection is a valid empty bundle.
+    """
+    decided_a, decided_b = a.decide(), b.decide()
+    if isinstance(decided_a, Unresolvable):
+        return decided_a
+    if isinstance(decided_b, Unresolvable):
+        return decided_b
+    shared = tuple(key for key in decided_a.value.support() if key in decided_b.value.members)
+    members: dict[Hashable, U] = {}
+    for key in shared:
+        decision = combine(key).decide()
+        if isinstance(decision, Unresolvable):
+            return decision
+        members[key] = decision.value
+    return Resolvable(BundleValue(roster=shared, members=members))
+
+
+def decide_mapped[U](
+    source: Bundle[Any],
+    per_key: Callable[[Hashable], Resolver[U]],
+) -> Resolvability[BundleValue[U]]:
+    """Map a per-member op over ``source`` (a functor/broadcast), preserving its roster.
+
+    ``per_key(key)`` builds the mapped value via the static algebra (e.g.
+    ``source.at(key).transformed_by(t)``), so per-member partiality propagates. Absent
+    keys stay absent — the support (and full roster) carry through unchanged.
+    """
+    match source.decide():
+        case Resolvable(collection):
+            members: dict[Hashable, U] = {}
+            for key in collection.support():
+                decision = per_key(key).decide()
+                if isinstance(decision, Unresolvable):
+                    return decision
+                members[key] = decision.value
+            return Resolvable(BundleValue(roster=collection.roster, members=members))
         case Unresolvable() as bad:
             return bad
     raise AssertionError("unreachable")  # pragma: no cover

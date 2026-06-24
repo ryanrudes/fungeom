@@ -161,3 +161,54 @@ def test_transform_bundle() -> None:
     keyed = TransformBundle.from_map({"a": Transform.identity()}, roster=["a", "b"])
     assert keyed.present("b").resolve() is False
     assert "absent" in keyed.at("b").decide().reason  # b in roster but masked
+
+
+def test_scalar_bundle_algebra() -> None:
+    a = ScalarBundle.from_map({"x": Scalar.of(10.0), "y": Scalar.of(20.0)})
+    b = ScalarBundle.from_map({"y": Scalar.of(2.0), "z": Scalar.of(9.0)})  # overlaps on y only
+    assert (a + b).resolve().support() == ("y",)  # zip on the key intersection
+    assert (a + b).at("y").resolve() == 22.0
+    assert (a - b).at("y").resolve() == 18.0
+    assert (a * b).at("y").resolve() == 40.0
+    assert (a / b).at("y").resolve() == 10.0
+    # static partiality flows through: ÷0 at a key is Unresolvable
+    div0 = a / ScalarBundle.from_map({"x": Scalar.of(0.0)})
+    assert isinstance(div0.at("x").decide(), Unresolvable)
+    # disjoint keys → a valid empty bundle
+    disjoint = ScalarBundle.of([Scalar.of(1.0)], keys=["a"]) + ScalarBundle.of([Scalar.of(2.0)], keys=["b"])
+    assert disjoint.count().resolve() == 0.0
+    # sum is total (identity 0 over empty); mean is not
+    assert a.sum().resolve() == 30.0
+    assert ScalarBundle.of([]).sum().resolve() == 0.0
+
+
+def test_vec3_bundle_algebra() -> None:
+    u = Vec3Bundle.from_array([[1, 0, 0], [0, 1, 0]])
+    v = Vec3Bundle.from_array([[1, 0, 0], [1, 0, 0]])
+    assert np.allclose((u + v).at(0).resolve(), [2, 0, 0])
+    assert np.allclose((u - v).at(1).resolve(), [-1, 1, 0])
+    assert u.dot(v).at(0).resolve() == 1.0  # cross-type lift → ScalarBundle
+    assert u.dot(v).at(1).resolve() == 0.0
+    assert np.allclose(u.sum().resolve(), [1, 1, 0])
+    assert np.allclose(Vec3Bundle.of([]).sum().resolve(), [0, 0, 0])  # zero vector over empty
+
+
+def test_point3_bundle_algebra() -> None:
+    p = Point3Bundle.from_array([[0, 0, 0], [0, 0, 0]])
+    q = Point3Bundle.from_array([[3, 4, 0], [0, 0, 0]])
+    assert p.distance_to(q).at(0).resolve() == 5.0  # cross-type lift → ScalarBundle
+    assert np.allclose(p.displacement_to(q).at(0).resolve(), [3, 4, 0])  # → Vec3Bundle
+    # broadcast one transform over the whole cloud (a map; preserves roster)
+    moved = p.transformed_by(Transform.translation(Vec3.of(1, 2, 3)))
+    assert np.allclose(moved.at(0).resolve().coord, [1, 2, 3])
+    assert moved.count().resolve() == 2.0
+    # broadcast preserves the roster: an absent key stays absent (distinguishes map from zip)
+    occluded = Point3Bundle.from_map({"a": Point3.at(0, 0, 0)}, roster=["a", "b"])
+    shifted = occluded.transformed_by(Transform.translation(Vec3.of(1, 0, 0)))
+    assert shifted.resolve().roster == ("a", "b")  # full roster carried through
+    assert shifted.resolve().support() == ("a",)  # b still absent, not collapsed
+    assert shifted.present("b").resolve() is False
+    # a cross-type zip also intersects keys
+    masked = Point3Bundle.from_map({"a": Point3.at(0, 0, 0)}, roster=["a", "b"])
+    other = Point3Bundle.from_map({"a": Point3.at(1, 0, 0)})
+    assert masked.distance_to(other).resolve().support() == ("a",)

@@ -18,13 +18,24 @@ import numpy as np
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
-from fungeom.primitives.bundle.resolvers.base import Bundle, decide_gathered, decide_member_at, decide_where
+from fungeom.primitives.bundle.resolvers.base import (
+    Bundle,
+    decide_gathered,
+    decide_mapped,
+    decide_member_at,
+    decide_where,
+    decide_zipped,
+)
+from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
+from fungeom.primitives.bundle.resolvers.vec3 import Vec3Bundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.transform.resolvers.base import Transform
+from fungeom.primitives.vec3.value import Float3
 
 
 class Point3Bundle(Bundle[Point3Value]):
@@ -101,6 +112,18 @@ class Point3Bundle(Bundle[Point3Value]):
         """The centroid of the *present* members (→ ``Point3``); Unresolvable if none are."""
         return _BundleCentroid3(bundle=self)
 
+    def transformed_by(self, transform: Transform) -> Point3Bundle:
+        """Every present point moved by one rigid ``transform`` (a broadcast / map)."""
+        return _TransformedPoint3Bundle(source=self, transform=transform)
+
+    def displacement_to(self, other: Point3Bundle) -> Vec3Bundle:
+        """The key-aligned vectors from this cloud to ``other`` (→ ``Vec3Bundle``)."""
+        return _DisplacementVec3Bundle(a=self, b=other)
+
+    def distance_to(self, other: Point3Bundle) -> ScalarBundle:
+        """The key-aligned distances from this cloud to ``other`` (→ ``ScalarBundle``)."""
+        return _DistanceScalarBundle(a=self, b=other)
+
 
 @dataclass(frozen=True, eq=False)
 class _GatheredPoint3Bundle(Point3Bundle):
@@ -153,3 +176,36 @@ class _BundleCentroid3(Point3):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _TransformedPoint3Bundle(Point3Bundle):
+    """Every present point of ``source`` moved by one ``transform`` (a broadcast)."""
+
+    source: Point3Bundle
+    transform: Transform
+
+    def _decide(self) -> BundleDecision[Point3Value]:
+        return decide_mapped(self.source, lambda key: self.source.at(key).transformed_by(self.transform))
+
+
+@dataclass(frozen=True, eq=False)
+class _DisplacementVec3Bundle(Vec3Bundle):
+    """The key-aligned displacements between two point clouds — a cross-type lift to vectors."""
+
+    a: Point3Bundle
+    b: Point3Bundle
+
+    def _decide(self) -> BundleDecision[Float3]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key).displacement_to(self.b.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _DistanceScalarBundle(ScalarBundle):
+    """The key-aligned distances between two point clouds — a cross-type lift to scalars."""
+
+    a: Point3Bundle
+    b: Point3Bundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key).distance_to(self.b.at(key)))

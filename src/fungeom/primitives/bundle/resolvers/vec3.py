@@ -10,7 +10,14 @@ import numpy as np
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
-from fungeom.primitives.bundle.resolvers.base import Bundle, decide_gathered, decide_member_at, decide_where
+from fungeom.primitives.bundle.resolvers.base import (
+    Bundle,
+    decide_gathered,
+    decide_member_at,
+    decide_where,
+    decide_zipped,
+)
+from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.vec3.decidability import Vec3Decision
 from fungeom.primitives.vec3.resolvers.base import Vec3
@@ -62,6 +69,22 @@ class Vec3Bundle(Bundle[Float3]):
         """The average of the present vectors (→ ``Vec3``); Unresolvable if none are."""
         return _Vec3BundleMean(bundle=self)
 
+    def sum(self) -> Vec3:
+        """The sum of the present vectors (→ ``Vec3``); the zero vector over an empty bundle."""
+        return _Vec3BundleSum(bundle=self)
+
+    def __add__(self, other: Vec3Bundle) -> Vec3Bundle:
+        """Key-aligned sum with ``other`` (on the intersection of present keys)."""
+        return _SumVec3Bundle(a=self, b=other)
+
+    def __sub__(self, other: Vec3Bundle) -> Vec3Bundle:
+        """Key-aligned difference with ``other``."""
+        return _DiffVec3Bundle(a=self, b=other)
+
+    def dot(self, other: Vec3Bundle) -> ScalarBundle:
+        """Key-aligned dot product with ``other`` (→ ``ScalarBundle``)."""
+        return _DotScalarBundle(a=self, b=other)
+
 
 @dataclass(frozen=True, eq=False)
 class _GatheredVec3Bundle(Vec3Bundle):
@@ -105,3 +128,47 @@ class _Vec3BundleMean(Vec3):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _Vec3BundleSum(Vec3):
+    bundle: Vec3Bundle
+
+    def _decide(self) -> Vec3Decision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                present = [collection.members[key] for key in collection.support()]
+                total = np.sum(present, axis=0) if present else np.zeros(3)
+                return Resolvable(as_vec3(total))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _SumVec3Bundle(Vec3Bundle):
+    a: Vec3Bundle
+    b: Vec3Bundle
+
+    def _decide(self) -> BundleDecision[Float3]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key) + self.b.at(key))
+
+
+@dataclass(frozen=True, eq=False)
+class _DiffVec3Bundle(Vec3Bundle):
+    a: Vec3Bundle
+    b: Vec3Bundle
+
+    def _decide(self) -> BundleDecision[Float3]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key) - self.b.at(key))
+
+
+@dataclass(frozen=True, eq=False)
+class _DotScalarBundle(ScalarBundle):
+    """The key-aligned dot product of two vector bundles — a cross-type lift to scalars."""
+
+    a: Vec3Bundle
+    b: Vec3Bundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_zipped(self.a, self.b, lambda key: self.a.at(key).dot(self.b.at(key)))
