@@ -1,0 +1,57 @@
+"""Transform2 — a rigid 2D transform (SE(2)) and its algebra."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fungeom import Direction2, RigidTransform2, Scalar, Transform2, Vec2
+
+
+def test_constructors_and_apply() -> None:
+    assert Transform2.identity().resolve().approx_equal(RigidTransform2.identity())
+    quarter = Transform2.rotation(np.pi / 2)
+    assert np.allclose(quarter.transform_vector(Vec2.of(1, 0)).resolve(), [0, 1], atol=1e-9)
+    # a direction stays unit length under the rotation
+    assert np.allclose(quarter.transform_direction(Direction2.of(1, 0)).resolve().vector, [0, 1], atol=1e-9)
+    shift = Transform2.translation(Vec2.of(3, 4))
+    assert np.allclose(shift.translation_part().resolve(), [3, 4])
+    assert Transform2.known(RigidTransform2.from_angle(0.0)).resolve().approx_equal(RigidTransform2.identity())
+
+
+def test_compose_inverse_and_decompose() -> None:
+    shift = Transform2.translation(Vec2.of(1, 0))
+    quarter = Transform2.rotation(np.pi / 2)
+    # compose applies the right operand first: rotate (1,0)->(0,1), then translate +x -> (1,1)
+    composed = (shift @ quarter).resolve()
+    assert np.allclose(composed.apply_point(np.array([1.0, 0.0])), [1, 1], atol=1e-9)
+    # inverse undoes
+    assert (shift @ shift.inverse()).resolve().approx_equal(RigidTransform2.identity())
+    # decompose: angle and rotation_part (translation dropped)
+    assert np.isclose(quarter.angle().resolve(), np.pi / 2)
+    assert np.isclose(shift.rotation_part().angle().resolve(), 0.0)  # a pure translation has no rotation
+
+
+def test_deferred_resolvability_propagates() -> None:
+    # a transform built from a deferred scalar/vector inherits resolvability
+    assert Transform2.rotation(Scalar.of(0)).resolve().approx_equal(RigidTransform2.identity())
+    bad = Transform2.rotation(Scalar.of(1) / Scalar.of(0))
+    assert bad.decide().reason  # Unresolvable, reason intact
+
+
+def test_value_helpers() -> None:
+    value = RigidTransform2.from_angle(np.pi / 2, translation=np.array([1.0, 2.0]))
+    assert np.allclose(value.translation, [1, 2])
+    assert np.isclose(value.angle(), np.pi / 2)
+    assert np.allclose(value.rotation, [[0, -1], [1, 0]], atol=1e-9)
+    assert value.apply_vector(np.array([1.0, 0.0])).round(9).tolist() == [0, 1]  # rotation only
+    assert "angle°=90" in repr(value)
+    assert repr(RigidTransform2.identity()) == "RigidTransform2(translation=[0, 0])"
+    # value-level compose via @
+    shift = RigidTransform2.from_translation(np.array([2.0, 0.0]))
+    assert np.allclose((value @ shift).apply_point(np.array([0.0, 0.0])), value.apply_point(np.array([2.0, 0.0])))
+
+
+def test_wrong_shape_matrix_is_rejected() -> None:
+    with pytest.raises(ValueError, match="must be 3x3"):
+        RigidTransform2(np.eye(4))  # type: ignore[arg-type]

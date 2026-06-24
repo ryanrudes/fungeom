@@ -34,15 +34,18 @@ from fungeom.primitives.timeline.value import Clock
 from fungeom.primitives.timemap.value import AffineTimeMap
 from fungeom.primitives.timewarp.value import PiecewiseLinearWarp
 from fungeom.primitives.transform.value import Mat3, Mat4, RigidTransform
+from fungeom.primitives.transform2.value import Mat2, RigidTransform2
 from fungeom.primitives.vec2.value import Float2
 from fungeom.primitives.vec3.value import Float3
 
 __all__ = [
     "Float2",
     "Float3",
+    "Mat2",
     "Mat3",
     "Mat4",
     "RigidTransform",
+    "RigidTransform2",
     "CoordinateFrame",
     "Point3Value",
     "PlaneValue",

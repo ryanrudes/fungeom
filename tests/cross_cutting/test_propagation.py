@@ -42,6 +42,7 @@ from fungeom import (
     TimeWarp,
     Timeline,
     Transform,
+    Transform2,
     TransformSignal,
     Unresolvable,
     Vec2,
@@ -56,6 +57,7 @@ BAD_V2, GOOD_V2 = Vec2.of(0, 0).normalized(), Vec2.of(1, 0)
 BAD_T, GOOD_T = Transform.rotation(Vec3.of(0, 0, 0), Scalar.of(1)), Transform.identity()
 BAD_D, GOOD_D = Direction3.of(0, 0, 0), Direction3.of(1, 0, 0)
 BAD_D2, GOOD_D2 = Direction2.of(0, 0), Direction2.of(1, 0)
+BAD_T2, GOOD_T2 = Transform2.rotation(BAD_S), Transform2.identity()
 BAD_F, GOOD_F = Frame.detached("loose"), Frame.world
 BAD_P = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
 GOOD_P = Point3.at(0, 0, 0)
@@ -226,6 +228,18 @@ CASES: dict[str, Callable[[], object]] = {
     "dir2.dot.lhs": lambda: BAD_D2.dot(GOOD_D2),
     "dir2.dot.rhs": lambda: GOOD_D2.dot(BAD_D2),
     "dir2.as_vector": lambda: BAD_D2.as_vector(),
+    "tf2.translation": lambda: Transform2.translation(BAD_V2),
+    "tf2.rotation.angle": lambda: Transform2.rotation(BAD_S),
+    "tf2.compose.a": lambda: BAD_T2 @ GOOD_T2,
+    "tf2.compose.b": lambda: GOOD_T2 @ BAD_T2,
+    "tf2.inverse": lambda: BAD_T2.inverse(),
+    "tf2.apply_vec.tf": lambda: BAD_T2.transform_vector(GOOD_V2),
+    "tf2.apply_vec.vec": lambda: GOOD_T2.transform_vector(BAD_V2),
+    "tf2.apply_dir.tf": lambda: BAD_T2.transform_direction(GOOD_D2),
+    "tf2.apply_dir.dir": lambda: GOOD_T2.transform_direction(BAD_D2),
+    "tf2.translation_part": lambda: BAD_T2.translation_part(),
+    "tf2.rotation_part": lambda: BAD_T2.rotation_part(),
+    "tf2.angle": lambda: BAD_T2.angle(),
     # frame
     "frame.attach.parent": lambda: BAD_F.attach("x", GOOD_T),
     "frame.attach.transform": lambda: GOOD_F.attach("x", BAD_T),

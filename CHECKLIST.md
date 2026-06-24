@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 731 tests · **100 % line coverage** (enforced via
+**Current status:** 748 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -62,6 +62,7 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Line | — | (newly built 2026-06-24) | **New primitive** (the tangent/axis vocabulary, sibling to `Plane`). Built directly with its intended surface (`through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along`) + the `Point3Bundle.fit_line` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators (e.g. an `angle_to`/`intersection`/`closest_approach` between two lines, a `point_at(t)`). |
 | Ray | — | (newly built 2026-06-24) | **New primitive** (the half-line; completes Line/Ray/Segment). `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed` — `project`/`distance_to` clamp behind the origin, `point_at` partial for a negative distance. **Completeness-audit pending** (e.g. `intersect` a plane → `Point3`, `to_line`). |
 | Direction2 | — | (newly built 2026-06-24) | **New primitive** — the first member of the **2D geometry stack** (mirrors `Direction3`). `of`/`towards`/`from_angle`; `reversed`/`perpendicular`/`angle`/`angle_to`/`dot`/`as_vector`. **Completeness-audit pending** (e.g. `slerp`/`rotate(angle)`, a signed `angle_to`). |
+| Transform2 | — | (newly built 2026-06-24) | **New primitive** — SE(2), the 2D rigid-motion member of the stack (mirrors `Transform`; a rotation is a single angle, so `rotation` is total). `identity`/`known`/`translation`/`rotation`; `@`/`inverse`/`transform_vector`/`transform_direction`/`translation_part`/`rotation_part`/`angle`. Note the `RotationTransform2.radians` field (avoids shadowing `Transform2.angle()` — the field/method trap). **Completeness-audit pending** (e.g. `slerp`, `from_point_pairs`). |
 | Segment | — | (newly built 2026-06-24) | **New primitive** (the finite segment / bone). `between`; `start`/`end`/`direction`/`length`/`midpoint`/`project`/`distance_to`/`contains`/`at`/`parameter_of`/`reversed` — clamps to the endpoints; `direction` partial when degenerate, `at` partial outside `[0,1]`. **Completeness-audit pending** (e.g. `to_line`/`to_ray`, `closest_approach` between two segments). |
 | Duration | ✅ | 2026-06-23 | Added `min`, `max` (total), `clamp(low,high)` (partial low>high), and order comparisons `lt`/`le`/`gt`/`ge` → `Bool` (signed order; reuse the generic `LessThan`/`LessEqual`) — mirror Scalar. Deferred: `between` (≡ `Instant.duration_to`), `sign`/`hz` (niche). |
 | Instant | ✅ | 2026-06-23 | Added `min`, `max` (earliest/latest, total; time is ordered), `centroid` (partial empty), `affine` (partial empty/Σw=0) — mirror Point3 + 1-D order. Deferred: `clamp` (≡ `Interval.clamp`), `before`/`after` (need `Bool`). |
@@ -220,6 +221,26 @@ Both are partial at the origin (the zero vector has no direction).
 | `transform_direction` | `TransformedDirection3` → `Direction3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `translation_part` | `TranslationPart` → `Vec3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `rotation_part` | `RotationPart` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+
+## Transform2 — value: `RigidTransform2` (SE(2))
+
+The 2D sibling of `Transform` (the planar rigid-motion member of the **2D geometry
+stack**). A 3x3 homogeneous matrix; a 2D **rotation is a single angle — no axis** — so
+`rotation` is *total* (no zero-axis partiality). **Constructors:** `identity`,
+`known(value)`, `translation(vec|components)`, `rotation(angle)`.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `identity` / `known` | `LiteralTransform2` | ✅ | ✅ | ✅ | — | — | ✅ |
+| `translation` | `TranslationTransform2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `rotation` | `RotationTransform2` (field `radians`) | ✅ | ✅ | ✅ | — (total) | ✅ | ✅ |
+| `@` compose | `ComposedTransform2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `inverse` | `InverseTransform2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `transform_vector` | `TransformedVec2` → `Vec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `transform_direction` | `TransformedDirection2` → `Direction2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `translation_part` | `TranslationPart2` → `Vec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `rotation_part` | `RotationPart2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `angle` → `Scalar` | `Transform2Angle` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
 ## Frame — value: `CoordinateFrame`
 

@@ -50,6 +50,7 @@ from fungeom.primitives.bundle import (
 from fungeom.primitives.timemap import AffineTimeMap, TimeMap
 from fungeom.primitives.timewarp import PiecewiseLinearWarp, TimeWarp
 from fungeom.primitives.transform import Mat3, Mat4, RigidTransform, Transform
+from fungeom.primitives.transform2 import Mat2, RigidTransform2, Transform2
 from fungeom.primitives.vec2 import Float2, Vec2
 from fungeom.primitives.vec3 import Float3, Vec3
 
@@ -62,6 +63,7 @@ __all__ = [
     "Direction2",
     "Direction3",
     "Transform",
+    "Transform2",
     "Frame",
     "Point3",
     "Plane",
@@ -103,9 +105,11 @@ __all__ = [
     "BundleValue",
     "Float2",
     "Float3",
+    "Mat2",
     "Mat3",
     "Mat4",
     "RigidTransform",
+    "RigidTransform2",
     "CoordinateFrame",
     "WORLD_FRAME",
     "Point3Value",
