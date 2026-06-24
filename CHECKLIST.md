@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 673 tests · **100 % line coverage** (enforced via
+**Current status:** 716 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -60,6 +60,8 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Point3 | ✅ | 2026-06-23 | Added `transformed_by` (rigid motion), `reflect_across` (central symmetry) — both total. Deferred: `barycentric` (≡ `affine`), `as_vector_from` (≡ `displacement_to`), reframe/express-in-frame (value-level `Point3Value.to_frame` exists; resolver form needs a frame-typed target API). |
 | Plane | — | (newly built 2026-06-24) | **New primitive** (the surface/patch-definition vocabulary). Built directly with its intended surface (`through`/`through_points`/`spanned_by`; `normal`/`origin`/`project`/`signed_distance`/`distance_to`/`contains`/`facing`/`flipped`/`offset`/`project_direction`/`frame`/`winding_normal`) + the `Point3Bundle.fit_plane` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators. |
 | Line | — | (newly built 2026-06-24) | **New primitive** (the tangent/axis vocabulary, sibling to `Plane`). Built directly with its intended surface (`through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along`) + the `Point3Bundle.fit_line` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators (e.g. an `angle_to`/`intersection`/`closest_approach` between two lines, a `point_at(t)`). |
+| Ray | — | (newly built 2026-06-24) | **New primitive** (the half-line; completes Line/Ray/Segment). `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed` — `project`/`distance_to` clamp behind the origin, `point_at` partial for a negative distance. **Completeness-audit pending** (e.g. `intersect` a plane → `Point3`, `to_line`). |
+| Segment | — | (newly built 2026-06-24) | **New primitive** (the finite segment / bone). `between`; `start`/`end`/`direction`/`length`/`midpoint`/`project`/`distance_to`/`contains`/`at`/`parameter_of`/`reversed` — clamps to the endpoints; `direction` partial when degenerate, `at` partial outside `[0,1]`. **Completeness-audit pending** (e.g. `to_line`/`to_ray`, `closest_approach` between two segments). |
 | Duration | ✅ | 2026-06-23 | Added `min`, `max` (total), `clamp(low,high)` (partial low>high), and order comparisons `lt`/`le`/`gt`/`ge` → `Bool` (signed order; reuse the generic `LessThan`/`LessEqual`) — mirror Scalar. Deferred: `between` (≡ `Instant.duration_to`), `sign`/`hz` (niche). |
 | Instant | ✅ | 2026-06-23 | Added `min`, `max` (earliest/latest, total; time is ordered), `centroid` (partial empty), `affine` (partial empty/Σw=0) — mirror Point3 + 1-D order. Deferred: `clamp` (≡ `Interval.clamp`), `before`/`after` (need `Bool`). |
 | Interval | ✅ | 2026-06-23 | Added (composed) `shifted(by)` (total) and `expanded(by)` (partial: shrinks past empty, inherited from `between`). Deferred: `contains`/`overlaps` (need `Bool`), `union`→`Coverage` (layering — lives on `Coverage`). |
@@ -284,6 +286,51 @@ back marker projection and on-axis tests.
 | `distance_to` → `Scalar` | `LineDistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `direction_along` → `Direction3` | `LineDirectionAlong` | ✅ | ✅ | ✅ | ✅ (<2 pts / non-monotone) | ✅ | ✅ |
+
+---
+
+## Ray — value: `RayValue` (a half-line: world origin + unit direction)
+
+The bounded-below member of the line family — a line with a *start*, extending one way
+only (non-negative parameters). Same layer as `Line` (above `point3`/`direction3`). The
+model for an outward surface normal, a sensor/camera ray, an "in front of?" test. The
+ops mirror `Line` but `project`/`distance_to` **clamp to the origin** when a point lies
+behind it, and `point_at` refuses a negative distance — the half-line semantics.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `through` | `RayThrough` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `from_to` | `RayFromTo` | ✅ | ✅ | ✅ | ✅ (coincident origin/target) | ✅ | ✅ |
+| `origin` / `direction` | `RayOrigin` / `RayDirection` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `project` → `Point3` (clamped) | `RayProject` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `distance_to` → `Scalar` (clamped) | `RayDistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `point_at` → `Point3` | `RayPointAt` | ✅ | ✅ | ✅ | ✅ (negative distance) | ✅ | ✅ |
+| `reversed` | `RayReversed` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+
+---
+
+## Segment — value: `SegmentValue` (a finite segment: two world endpoints)
+
+The bounded member of the line family — it runs from one endpoint to another and stops
+(parameters in `[0, 1]`). Exactly a bone (joint to joint), so it carries `length` and a
+`midpoint`, and `project`/`distance_to` **clamp to the endpoints** (the closest point on
+a *bone*, not its infinite line). A degenerate (zero-length) segment is a valid value (a
+point) but has no `direction`. Same layer as `Line` (above `point3`/`direction3`).
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | --- | :-: | :-: | :-: | :-: | :-: |
+| `between` | `SegmentBetween` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `start` / `end` | `SegmentStart` / `SegmentEnd` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `direction` → `Direction3` | `SegmentDirection` | ✅ | ✅ | ✅ | ✅ (degenerate) | ✅ | ✅ |
+| `length` → `Scalar` | `SegmentLength` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `midpoint` → `Point3` | `SegmentMidpoint` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `project` → `Point3` (clamped) | `SegmentProject` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `distance_to` → `Scalar` (clamped) | `SegmentDistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `at` → `Point3` | `SegmentAt` | ✅ | ✅ | ✅ | ✅ (parameter outside [0,1]) | ✅ | ✅ |
+| `parameter_of` → `Scalar` | `SegmentParameterOf` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `reversed` | `SegmentReversed` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
 ---
 

@@ -28,7 +28,9 @@ from fungeom import (
     Point3Bundle,
     Point3BundleSignal,
     Point3Signal,
+    Ray,
     ScalarBundle,
+    Segment,
     TransformBundle,
     Vec3Bundle,
     RigidTransform,
@@ -59,6 +61,10 @@ BAD_PLANE = Plane.through(BAD_P, GOOD_D)
 GOOD_PLANE = Plane.through(GOOD_P, GOOD_D)
 BAD_LINE = Line.through(BAD_P, GOOD_D)
 GOOD_LINE = Line.through(GOOD_P, GOOD_D)
+BAD_RAY = Ray.through(BAD_P, GOOD_D)
+GOOD_RAY = Ray.through(GOOD_P, GOOD_D)
+BAD_SEG = Segment.between(BAD_P, GOOD_P)
+GOOD_SEG = Segment.between(GOOD_P, Point3.at(1, 0, 0))
 BAD_DUR, GOOD_DUR = Duration.of(1).scale(BAD_S), Duration.of(2)
 BAD_I, GOOD_I = Instant.epoch.shifted_by(BAD_DUR), Instant.at(0)
 BAD_INT = Interval.between(BAD_I, GOOD_I)
@@ -272,6 +278,35 @@ CASES: dict[str, Callable[[], object]] = {
     "line.contains": lambda: BAD_LINE.contains(GOOD_P),
     "line.direction_along.line": lambda: BAD_LINE.direction_along([GOOD_P, GOOD_P]),
     "line.direction_along.points": lambda: GOOD_LINE.direction_along([GOOD_P, BAD_P]),
+    "ray.through.origin": lambda: Ray.through(BAD_P, GOOD_D),
+    "ray.through.direction": lambda: Ray.through(GOOD_P, BAD_D),
+    "ray.from_to.origin": lambda: Ray.from_to(BAD_P, GOOD_P),
+    "ray.from_to.target": lambda: Ray.from_to(GOOD_P, BAD_P),
+    "ray.origin": lambda: BAD_RAY.origin(),
+    "ray.direction": lambda: BAD_RAY.direction(),
+    "ray.project.ray": lambda: BAD_RAY.project(GOOD_P),
+    "ray.project.point": lambda: GOOD_RAY.project(BAD_P),
+    "ray.distance_to.ray": lambda: BAD_RAY.distance_to(GOOD_P),
+    "ray.distance_to.point": lambda: GOOD_RAY.distance_to(BAD_P),
+    "ray.contains": lambda: BAD_RAY.contains(GOOD_P),
+    "ray.point_at": lambda: BAD_RAY.point_at(1.0),
+    "ray.reversed": lambda: BAD_RAY.reversed(),
+    "segment.between.start": lambda: Segment.between(BAD_P, GOOD_P),
+    "segment.between.end": lambda: Segment.between(GOOD_P, BAD_P),
+    "segment.start": lambda: BAD_SEG.start(),
+    "segment.end": lambda: BAD_SEG.end(),
+    "segment.direction": lambda: BAD_SEG.direction(),
+    "segment.length": lambda: BAD_SEG.length(),
+    "segment.midpoint": lambda: BAD_SEG.midpoint(),
+    "segment.project.segment": lambda: BAD_SEG.project(GOOD_P),
+    "segment.project.point": lambda: GOOD_SEG.project(BAD_P),
+    "segment.distance_to.segment": lambda: BAD_SEG.distance_to(GOOD_P),
+    "segment.distance_to.point": lambda: GOOD_SEG.distance_to(BAD_P),
+    "segment.contains": lambda: BAD_SEG.contains(GOOD_P),
+    "segment.at": lambda: BAD_SEG.at(0.5),
+    "segment.parameter_of.segment": lambda: BAD_SEG.parameter_of(GOOD_P),
+    "segment.parameter_of.point": lambda: GOOD_SEG.parameter_of(BAD_P),
+    "segment.reversed": lambda: BAD_SEG.reversed(),
     # duration
     "duration.sum.lhs": lambda: BAD_DUR + GOOD_DUR,
     "duration.sum.rhs": lambda: GOOD_DUR + BAD_DUR,

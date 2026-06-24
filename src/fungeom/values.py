@@ -25,7 +25,9 @@ from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.line.value import LineValue
 from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.ray.value import RayValue
 from fungeom.primitives.sampling.value import SamplingValue
+from fungeom.primitives.segment.value import SegmentValue
 from fungeom.primitives.signals.series import SampledSeries
 from fungeom.primitives.timeline.value import Clock
 from fungeom.primitives.timemap.value import AffineTimeMap
@@ -44,6 +46,8 @@ __all__ = [
     "Point3Value",
     "PlaneValue",
     "LineValue",
+    "RayValue",
+    "SegmentValue",
     "Direction3Value",
     "IntervalValue",
     "CoverageValue",
