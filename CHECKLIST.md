@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 643 tests · **100 % line coverage** (enforced via
+**Current status:** 646 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -233,8 +233,11 @@ Resolving world-anchors; partial when the frame is ungrounded.
 
 Surface geometry — the home for the *patch*-definition vocabulary (a contact surface
 frame, built various ways). Above `point3`/`direction3` in the layering; resolving is
-world-frame. Pure algebra (no numerics — the N-marker least-squares fit will live on
-`Bundle.fit_plane`, a later slice). Its combinators directly back the surface-frame
+world-frame. The `Plane` ops are pure algebra; the **N-marker least-squares fit is
+`Point3Bundle.fit_plane()`** (concrete in the bundle package — the only numerics,
+SVD-based; Unresolvable for <3 points or a non-unique normal via a relative
+singular-value-gap test that catches near-collinear *and* near-isotropic clouds).
+Its combinators directly back the surface-frame
 resolvers a downstream app needs: `facing` (resolve a fitted normal's sign from a
 reference point), `offset` (contact-surface offset), `project`/`project_direction`
 (marker projection, reference tangent), `frame` (assemble the canonical right-handed

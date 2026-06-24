@@ -463,6 +463,7 @@ CASES: dict[str, Callable[[], object]] = {
     "bundle.count": lambda: BAD_BUNDLE.count(),
     "bundle.where": lambda: BAD_BUNDLE.where([0]),
     "bundle.centroid": lambda: BAD_BUNDLE.centroid(),
+    "bundle.fit_plane": lambda: BAD_BUNDLE.fit_plane(),
     # other bundle facades
     "vbundle.of": lambda: Vec3Bundle.of([BAD_V3]),
     "vbundle.at": lambda: BAD_VB.at(0),

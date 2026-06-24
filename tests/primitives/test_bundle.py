@@ -115,6 +115,27 @@ def test_empty_fold_is_unresolvable() -> None:
     assert "empty bundle" in decision.reason
 
 
+def test_fit_plane() -> None:
+    # a slightly-noisy planar (z ≈ 0) cloud fits a plane with a ±z normal through the points
+    cloud = Point3Bundle.from_array([[0, 0, 0], [2, 0, 0.01], [0, 3, -0.01], [2, 3, 0], [1, 1, 0.005]])
+    plane = cloud.fit_plane()
+    assert np.allclose(np.abs(plane.normal().resolve().vector), [0, 0, 1], atol=0.02)
+    assert abs(plane.signed_distance(Point3.at(1, 1, 0)).resolve()) < 0.02  # the points are near the plane
+    # the fitted sign is arbitrary; facing resolves it
+    assert plane.facing(Point3.at(0, 0, 10)).normal().resolve().vector[2] > 0
+
+
+def test_fit_plane_degeneracy() -> None:
+    assert "at least three" in Point3Bundle.from_array([[0, 0, 0], [1, 0, 0]]).fit_plane().decide().reason
+    # collinear (rod-like): no unique least-variance direction
+    collinear = Point3Bundle.from_array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]]).fit_plane()
+    assert isinstance(collinear.decide(), Unresolvable)
+    assert "no unique normal" in collinear.decide().reason
+    # isotropic (ball-like — a cube's 8 corners): the gap test catches it where σ₂>0 would not
+    cube = [[x, y, z] for x in (0, 1) for y in (0, 1) for z in (0, 1)]
+    assert isinstance(Point3Bundle.from_array(cube).fit_plane().decide(), Unresolvable)
+
+
 def test_vec3_bundle() -> None:
     cloud = Vec3Bundle.from_array([[1, 0, 0], [3, 0, 0]])
     assert np.allclose(cloud.at(1).resolve(), [3, 0, 0])

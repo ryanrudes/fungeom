@@ -31,6 +31,7 @@ from fungeom.primitives.bundle.resolvers.vec3 import Vec3Bundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
+from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
@@ -111,6 +112,18 @@ class Point3Bundle(Bundle[Point3Value]):
     def centroid(self) -> Point3:
         """The centroid of the *present* members (→ ``Point3``); Unresolvable if none are."""
         return _BundleCentroid3(bundle=self)
+
+    def fit_plane(self, *, tolerance: float = 1e-6) -> Plane:
+        """The least-squares plane through the present points (→ ``Plane``, a numeric PCA fit).
+
+        Unresolvable with fewer than three present points, or when the cloud has no unique
+        normal direction (near-collinear or isotropic) at ``tolerance`` (a relative
+        singular-value-gap test). The fitted normal's sign is arbitrary — orient it with
+        :meth:`Plane.facing`.
+        """
+        from fungeom.primitives.bundle.resolvers.fit import FittedPlane
+
+        return FittedPlane(cloud=self, tolerance=tolerance)
 
     def transformed_by(self, transform: Transform) -> Point3Bundle:
         """Every present point moved by one rigid ``transform`` (a broadcast / map)."""
