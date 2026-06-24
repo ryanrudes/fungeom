@@ -15,7 +15,23 @@ Run me:  python examples/06_signals_over_time.py
 
 from __future__ import annotations
 
-from fungeom import Direction3Signal, Instant, Interval, Point3Signal, ScalarSignal, TimeMap
+from fungeom import (
+    Direction3Signal,
+    Instant,
+    Interval,
+    Point3Signal,
+    Resolver,
+    ScalarSignal,
+    TimeMap,
+    Unresolvable,
+)
+
+
+def why[T](resolver: Resolver[T]) -> str:
+    """The reason a resolver is Unresolvable — narrowed for the partiality prints below."""
+    decision = resolver.decide()
+    assert isinstance(decision, Unresolvable)
+    return decision.reason
 
 
 def main() -> None:
@@ -30,7 +46,7 @@ def main() -> None:
     print("at(1) + at(2)         :", (speed.at(1.0) + speed.at(2.0)).resolve())
 
     # Sampling outside the domain has no answer (the second partiality layer).
-    print("at t=9 (off-domain)   :", speed.at(9.0).decide().reason)
+    print("at t=9 (off-domain)   :", why(speed.at(9.0)))
 
     # --- Time-axis transforms are lazy resolvers too ----------------------
     later = speed.shift(5.0)  # +5s latency
@@ -48,7 +64,7 @@ def main() -> None:
     print("support (gappy)       :", gappy.support().resolve())
     print("defined at t=0.5      :", gappy.defined_at(0.5).resolve())
     print("defined at t=5 (gap)  :", gappy.defined_at(5.0).resolve())
-    print("at t=5 (gap)          :", gappy.at(5.0).decide().reason)
+    print("at t=5 (gap)          :", why(gappy.at(5.0)))
 
     # --- Signals compose: a time-aligned algebra ----
     # Two scalar signals on *different* sample bases add on the union of their
@@ -58,7 +74,7 @@ def main() -> None:
     right = ScalarSignal.from_samples([0.0, 1.0, 2.0], [0.0, 10.0, 0.0])
     print("sum at t=1            :", (left + right).at(1.0).resolve())  # 10 + 10 -> 20
     crosses_zero = ScalarSignal.from_samples([0.0, 2.0], [1.0, 0.0])
-    print("quotient (÷ crosses 0):", (left / crosses_zero).decide().reason)
+    print("quotient (÷ crosses 0):", why(left / crosses_zero))
     # cross-type lift: the distance between two *moving* points, as a ScalarSignal
     here = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 0], [0, 0, 0]])
     there = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 0], [6, 8, 0]])
@@ -69,7 +85,7 @@ def main() -> None:
     print("slerp midpoint        :", heading.at(0.5).resolve().vector.round(3))  # the 45 deg direction
     # Antipodal samples have no unique geodesic -> Unresolvable, reason intact.
     flip = Direction3Signal.from_samples([0.0, 1.0], [[1, 0, 0], [-1, 0, 0]])
-    print("antipodal slerp       :", flip.at(0.5).decide().reason)
+    print("antipodal slerp       :", why(flip.at(0.5)))
 
 
 if __name__ == "__main__":

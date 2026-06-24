@@ -34,7 +34,9 @@ def main() -> None:
 
     # An interval is *partial*: a span whose end precedes its start has no value.
     backwards = Interval.between(Instant.at(10), Instant.at(0))
-    print("end-before-start      :", backwards.decide().reason)
+    backwards_decision = backwards.decide()
+    assert isinstance(backwards_decision, Unresolvable)  # narrow the union to read its reason
+    print("end-before-start      :", backwards_decision.reason)
 
     # --- Coverage: where data actually exists (a union of disjoint spans) --
     # Two recording windows with a dropout between them.

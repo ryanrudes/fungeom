@@ -19,7 +19,23 @@ Run me:  python examples/08_point_clouds_over_time.py
 
 from __future__ import annotations
 
-from fungeom import Point3, Point3Bundle, Point3BundleSignal, ScalarSignal, Transform, Vec3
+from fungeom import (
+    Point3,
+    Point3Bundle,
+    Point3BundleSignal,
+    Resolver,
+    ScalarSignal,
+    Transform,
+    Unresolvable,
+    Vec3,
+)
+
+
+def why[T](resolver: Resolver[T]) -> str:
+    """The reason a resolver is Unresolvable — narrowed for the partiality prints below."""
+    decision = resolver.decide()
+    assert isinstance(decision, Unresolvable)
+    return decision.reason
 
 
 def main() -> None:
@@ -41,7 +57,7 @@ def main() -> None:
         roster=["HEAD", "LWRIST", "RWRIST"],
     )
     print("present RWRIST        :", occluded.present("RWRIST").resolve())  # False
-    print("at RWRIST (occluded)  :", occluded.at("RWRIST").decide().reason)
+    print("at RWRIST (occluded)  :", why(occluded.at("RWRIST")))
     print("centroid (present only):", occluded.centroid().resolve().coord)  # folds over what's there
 
     # --- A point cloud over time (Signal[Bundle[Point3]]) ------------------
@@ -62,8 +78,8 @@ def main() -> None:
 
     # The gap, made honest: RWRIST is present at t=0 and t=2 but occluded at t=1,
     # so the library refuses to invent where it was in between.
-    print("at t=0.5, RWRIST      :", motion.at(0.5).at("RWRIST").decide().reason)  # across the dropout
-    print("at t=1.0, RWRIST      :", motion.at(1.0).at("RWRIST").decide().reason)  # the exact occluded frame
+    print("at t=0.5, RWRIST      :", why(motion.at(0.5).at("RWRIST")))  # across the dropout
+    print("at t=1.0, RWRIST      :", why(motion.at(1.0).at("RWRIST")))  # the exact occluded frame
 
     # --- distribute: one marker's trajectory over time (key = transpose of at) ---
     head = motion.key("HEAD")  # a real Point3Signal
@@ -72,7 +88,7 @@ def main() -> None:
 
     rwrist = motion.key("RWRIST")
     print("RWRIST support (gappy):", rwrist.support().resolve())  # two point spans: present only at t=0 and t=2
-    print("RWRIST at t=1.0       :", rwrist.at(1.0).decide().reason)  # in the occlusion gap
+    print("RWRIST at t=1.0       :", why(rwrist.at(1.0)))  # in the occlusion gap
 
     # Because each slice is an ordinary Point3Signal, the trajectory algebra composes:
     # the HEAD<->LWRIST separation over time is a ScalarSignal.

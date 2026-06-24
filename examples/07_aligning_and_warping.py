@@ -18,7 +18,14 @@ Run me:  python examples/07_aligning_and_warping.py
 
 from __future__ import annotations
 
-from fungeom import ScalarSignal, TimeMap, TimeWarp, Timeline
+from fungeom import Resolver, ScalarSignal, TimeMap, TimeWarp, Timeline, Unresolvable
+
+
+def why[T](resolver: Resolver[T]) -> str:
+    """The reason a resolver is Unresolvable — narrowed for the partiality prints below."""
+    decision = resolver.decide()
+    assert isinstance(decision, Unresolvable)
+    return decision.reason
 
 
 def main() -> None:
@@ -37,12 +44,12 @@ def main() -> None:
     print("  endpoints land on A   :", recovered.apply(5.0), recovered.apply(14.95))  # 2.0, 12.0
 
     # Two correspondences at the *same* source time leave the rate undetermined.
-    print("through (same source)   :", TimeMap.through((5.0, 2.0), (5.0, 9.0)).decide().reason)
+    print("through (same source)   :", why(TimeMap.through((5.0, 2.0), (5.0, 9.0))))
 
     # --- Grounding *is* synchronization: attach the detached clock ---------
     # An un-synced recording sits on a detached timeline; its instants have no
     # master-clock answer — until the recovered map grounds it.
-    print("detached B at 5.0       :", Timeline.detached("camB").at(5.0).decide().reason)
+    print("detached B at 5.0       :", why(Timeline.detached("camB").at(5.0)))
     cam_b = Timeline.master.derive("camB", by=sync)  # the recovered edge to master
     print("grounded B at 5.0 -> A  :", cam_b.at(5.0).resolve())  # 2.0s on the master clock
 
@@ -53,7 +60,7 @@ def main() -> None:
     print("warp at B-time 7.5      :", warp.resolve().apply(7.5))  # interpolated between knots
 
     # A warp must preserve order, and is defined only over its knot span.
-    print("non-monotonic warp      :", TimeWarp.through([(0.0, 0.0), (1.0, 5.0), (0.5, 2.0)]).decide().reason)
+    print("non-monotonic warp      :", why(TimeWarp.through([(0.0, 0.0), (1.0, 5.0), (0.5, 2.0)])))
 
     # --- Reparameterize a signal from B's clock onto the master clock -----
     sensor = ScalarSignal.from_samples([0.0, 5.0, 10.0, 15.0], [0.0, 50.0, 100.0, 150.0])
@@ -63,7 +70,7 @@ def main() -> None:
 
     # A warp invents no data past its knots — too short a warp is Unresolvable.
     short = TimeWarp.through([(0.0, 0.0), (5.0, 4.0)])  # only covers B-time [0, 5]
-    print("warp too short          :", sensor.reparameterize(short).decide().reason)
+    print("warp too short          :", why(sensor.reparameterize(short)))
 
 
 if __name__ == "__main__":
