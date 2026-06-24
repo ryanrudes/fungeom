@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 646 tests · **100 % line coverage** (enforced via
+**Current status:** 673 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -257,6 +257,31 @@ surface frame). **`Direction3.any_perpendicular`** (the don't-care tangent) ship
 | `offset` | `PlaneOffset` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `project_direction` → `Direction3` | `PlaneProjectDirection` | ✅ | ✅ | ✅ | ✅ (normal-parallel) | ✅ | ✅ |
 | `frame` → `Transform` | `PlaneFrame` | ✅ | ✅ | ✅ | ✅ (tangent ∥ normal) | ✅ | ✅ |
+| `winding_normal` → `Direction3` | `PlaneWindingNormal` | ✅ | ✅ | ✅ | ✅ (<3 pts / zero area) | ✅ | ✅ |
+
+---
+
+## Line — value: `LineValue` (an oriented line: world point + unit direction)
+
+The axis companion to `Plane` — the home for the *tangent*-definition vocabulary (a
+line-fit tangent, oriented various ways). Same layer as `Plane` (above
+`point3`/`direction3`); resolving is world-frame. The `Line` ops are pure algebra; the
+**N-marker least-squares fit is `Point3Bundle.fit_line()`** (concrete in the bundle
+package alongside `fit_plane` — SVD-based; Unresolvable for <2 points or a non-dominant
+direction via a relative top-singular-value-gap test that catches isotropic clouds). Its
+combinator `direction_along` resolves a fitted direction's sign from points known to be
+in order along the line (the line-fit tangent orientation); `project`/`distance_to`
+back marker projection and on-axis tests.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `through` | `LineThrough` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `through_points` | `LineThroughPoints` | ✅ | ✅ | ✅ | ✅ (coincident) | ✅ | ✅ |
+| `direction` / `origin` | `LineDirection` / `LineOrigin` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `project` → `Point3` | `LineProject` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `distance_to` → `Scalar` | `LineDistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `direction_along` → `Direction3` | `LineDirectionAlong` | ✅ | ✅ | ✅ | ✅ (<2 pts / non-monotone) | ✅ | ✅ |
 
 ---
 
@@ -518,6 +543,7 @@ build, not a completeness audit — see the roadmap.
 | `sum` → primitive (`Scalar`/`Vec3`) | `_…BundleSum` | ✅ | ✅ | ✅ | — (total; identity over empty) | ✅ | ✅ |
 | key-aligned lift (`+ - * /`, `dot`, `displacement_to`, `distance_to`) | `_…Bundle` → `decide_zipped` | ✅ | ✅ | ✅ | ✅ (per-key static partiality, e.g. ÷0) | ✅ | ✅ |
 | broadcast `transformed_by` | `_TransformedPoint3Bundle` → `decide_mapped` | ✅ | ✅ | ✅ | ✅ (per-member; propagates) | ✅ | ✅ |
+| numeric fit `fit_plane`→`Plane` / `fit_line`→`Line` | `FittedPlane` / `FittedLine` (SVD; `bundle/resolvers/fit.py`) | ✅ | ✅ | ✅ | ✅ (<3/<2 pts; non-unique normal / non-dominant direction via relative singular-value gap) | ✅ | ✅ |
 | over-time `Point3BundleSignal` (`from_frames`/`at`/inherited ops) | `_SampledPoint3BundleSignal` + `POINT3_BUNDLE_BLEND` (in `signals/bundle.py`) | ✅ | ✅ | ✅ | ✅ (off-domain; count mismatch; ungrounded; occlusion) | ✅ | ✅ |
 | entity-axis slice `Point3BundleSignal.key(k)`→`Point3Signal` (`distribute` column) | `_DistributedPoint3Signal` → `decide_distributed` (in `signals/bundle.py`) | ✅ | ✅ | ✅ (incl. commuting square; temporal gap) | ✅ (not in roster; never present; occlusion gaps; **refuses non-default reconstruction** — `hold`/`nearest`/`wrap`) | ✅ | ✅ |
 

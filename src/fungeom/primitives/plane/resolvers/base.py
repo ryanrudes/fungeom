@@ -11,6 +11,8 @@ lower-layer primitives are imported normally.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.direction3.resolvers.base import Direction3
@@ -133,3 +135,17 @@ class Plane(Resolver[PlaneValue]):
         from fungeom.primitives.plane.resolvers.frame import PlaneFrame
 
         return PlaneFrame(plane=self, origin=origin, tangent=tangent)
+
+    def winding_normal(self, points: Sequence[Point3], tolerance: float = 1e-9) -> Direction3:
+        """The normal whose side ``points`` wind counter-clockwise around (→ ``Direction3``).
+
+        The points are projected onto the plane and read as an ordered polygon; the
+        signed area vector (``½ Σ (pᵢ − c) × (pᵢ₊₁ − c)``, cyclic, about their centroid
+        ``c``) points to the side from which the winding looks counter-clockwise — by the
+        right-hand rule, ``±`` this plane's own normal. This resolves a winding-based
+        normal orientation. Unresolvable with fewer than three points, or when the
+        enclosed area is within ``tolerance`` of the cloud's scale (collinear / zero-area).
+        """
+        from fungeom.primitives.plane.resolvers.winding_normal import PlaneWindingNormal
+
+        return PlaneWindingNormal(plane=self, points=tuple(points), tolerance=tolerance)

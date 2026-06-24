@@ -22,6 +22,7 @@ from fungeom.primitives.coverage.value import CoverageValue
 from fungeom.primitives.direction3.value import Direction3Value
 from fungeom.primitives.frame.value import CoordinateFrame
 from fungeom.primitives.interval.value import IntervalValue
+from fungeom.primitives.line.value import LineValue
 from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.sampling.value import SamplingValue
@@ -42,6 +43,7 @@ __all__ = [
     "CoordinateFrame",
     "Point3Value",
     "PlaneValue",
+    "LineValue",
     "Direction3Value",
     "IntervalValue",
     "CoverageValue",

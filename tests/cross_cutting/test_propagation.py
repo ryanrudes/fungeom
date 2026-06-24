@@ -22,6 +22,7 @@ from fungeom import (
     Instant,
     Interval,
     Direction3Bundle,
+    Line,
     Plane,
     Point3,
     Point3Bundle,
@@ -56,6 +57,8 @@ BAD_P = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
 GOOD_P = Point3.at(0, 0, 0)
 BAD_PLANE = Plane.through(BAD_P, GOOD_D)
 GOOD_PLANE = Plane.through(GOOD_P, GOOD_D)
+BAD_LINE = Line.through(BAD_P, GOOD_D)
+GOOD_LINE = Line.through(GOOD_P, GOOD_D)
 BAD_DUR, GOOD_DUR = Duration.of(1).scale(BAD_S), Duration.of(2)
 BAD_I, GOOD_I = Instant.epoch.shifted_by(BAD_DUR), Instant.at(0)
 BAD_INT = Interval.between(BAD_I, GOOD_I)
@@ -254,6 +257,21 @@ CASES: dict[str, Callable[[], object]] = {
     "plane.frame.plane": lambda: BAD_PLANE.frame(GOOD_P, GOOD_D),
     "plane.frame.origin": lambda: GOOD_PLANE.frame(BAD_P, GOOD_D),
     "plane.frame.tangent": lambda: GOOD_PLANE.frame(GOOD_P, BAD_D),
+    "plane.winding_normal.plane": lambda: BAD_PLANE.winding_normal([GOOD_P, GOOD_P, GOOD_P]),
+    "plane.winding_normal.points": lambda: GOOD_PLANE.winding_normal([GOOD_P, GOOD_P, BAD_P]),
+    "line.through.anchor": lambda: Line.through(BAD_P, GOOD_D),
+    "line.through.axis": lambda: Line.through(GOOD_P, BAD_D),
+    "line.through_points.a": lambda: Line.through_points(BAD_P, GOOD_P),
+    "line.through_points.b": lambda: Line.through_points(GOOD_P, BAD_P),
+    "line.direction": lambda: BAD_LINE.direction(),
+    "line.origin": lambda: BAD_LINE.origin(),
+    "line.project.line": lambda: BAD_LINE.project(GOOD_P),
+    "line.project.point": lambda: GOOD_LINE.project(BAD_P),
+    "line.distance_to.line": lambda: BAD_LINE.distance_to(GOOD_P),
+    "line.distance_to.point": lambda: GOOD_LINE.distance_to(BAD_P),
+    "line.contains": lambda: BAD_LINE.contains(GOOD_P),
+    "line.direction_along.line": lambda: BAD_LINE.direction_along([GOOD_P, GOOD_P]),
+    "line.direction_along.points": lambda: GOOD_LINE.direction_along([GOOD_P, BAD_P]),
     # duration
     "duration.sum.lhs": lambda: BAD_DUR + GOOD_DUR,
     "duration.sum.rhs": lambda: GOOD_DUR + BAD_DUR,
@@ -464,6 +482,7 @@ CASES: dict[str, Callable[[], object]] = {
     "bundle.where": lambda: BAD_BUNDLE.where([0]),
     "bundle.centroid": lambda: BAD_BUNDLE.centroid(),
     "bundle.fit_plane": lambda: BAD_BUNDLE.fit_plane(),
+    "bundle.fit_line": lambda: BAD_BUNDLE.fit_line(),
     # other bundle facades
     "vbundle.of": lambda: Vec3Bundle.of([BAD_V3]),
     "vbundle.at": lambda: BAD_VB.at(0),

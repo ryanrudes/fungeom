@@ -31,6 +31,7 @@ from fungeom.primitives.bundle.resolvers.vec3 import Vec3Bundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
+from fungeom.primitives.line.resolvers.base import Line
 from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
@@ -124,6 +125,17 @@ class Point3Bundle(Bundle[Point3Value]):
         from fungeom.primitives.bundle.resolvers.fit import FittedPlane
 
         return FittedPlane(cloud=self, tolerance=tolerance)
+
+    def fit_line(self, *, tolerance: float = 1e-6) -> Line:
+        """The least-squares line through the present points (→ ``Line``, a numeric PCA fit).
+
+        Unresolvable with fewer than two present points, or when the cloud has no dominant
+        direction (isotropic) at ``tolerance`` (a relative singular-value-gap test). The
+        fitted direction's sign is arbitrary — orient it with :meth:`Line.direction_along`.
+        """
+        from fungeom.primitives.bundle.resolvers.fit import FittedLine
+
+        return FittedLine(cloud=self, tolerance=tolerance)
 
     def transformed_by(self, transform: Transform) -> Point3Bundle:
         """Every present point moved by one rigid ``transform`` (a broadcast / map)."""

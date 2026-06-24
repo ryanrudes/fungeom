@@ -82,6 +82,32 @@ def test_frame_is_the_canonical_surface_frame() -> None:
     assert "no in-plane x axis" in decision.reason
 
 
+def test_winding_normal_orients_by_polygon_winding() -> None:
+    g = _ground()  # the z = 5 plane, normal +z
+    # a unit square traced counter-clockwise (seen from +z) winds toward +z
+    square = [Point3.at(0, 0, 5), Point3.at(1, 0, 5), Point3.at(1, 1, 5), Point3.at(0, 1, 5)]
+    assert np.allclose(g.winding_normal(square).resolve().vector, [0, 0, 1])
+    assert np.allclose(g.winding_normal(list(reversed(square))).resolve().vector, [0, 0, -1])  # clockwise → -z
+    # points off the plane are projected first, so the loop need not be exactly planar
+    lifted = [Point3.at(0, 0, 9), Point3.at(1, 0, 2), Point3.at(1, 1, 7), Point3.at(0, 1, 4)]
+    assert np.allclose(g.winding_normal(lifted).resolve().vector, [0, 0, 1])
+    # the zero-area test is *relative* to scale (‖A‖ ≤ tol·maxradius²): a genuine but tiny
+    # triangle still resolves — an absolute area threshold would wrongly reject it.
+    tiny = [Point3.at(0, 0, 5), Point3.at(1e-5, 0, 5), Point3.at(0, 1e-5, 5)]
+    assert np.allclose(g.winding_normal(tiny).resolve().vector, [0, 0, 1])
+
+
+def test_winding_normal_partiality() -> None:
+    g = _ground()
+    too_few = g.winding_normal([Point3.at(0, 0, 5), Point3.at(1, 0, 5)])
+    assert "at least three" in too_few.decide().reason
+    # a collinear (zero-area) loop has no winding sense
+    collinear = g.winding_normal([Point3.at(0, 0, 5), Point3.at(1, 0, 5), Point3.at(2, 0, 5)])
+    decision = collinear.decide()
+    assert isinstance(decision, Unresolvable)
+    assert "no area" in decision.reason
+
+
 def test_plane_value_helpers() -> None:
     value = _ground().resolve()
     assert value.approx_equal(Plane.through(Point3.at(9, 9, 5), Direction3.of(0, 0, 1)).resolve())  # same plane

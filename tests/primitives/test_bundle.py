@@ -123,6 +123,10 @@ def test_fit_plane() -> None:
     assert abs(plane.signed_distance(Point3.at(1, 1, 0)).resolve()) < 0.02  # the points are near the plane
     # the fitted sign is arbitrary; facing resolves it
     assert plane.facing(Point3.at(0, 0, 10)).normal().resolve().vector[2] > 0
+    # the gap test is *relative* to scale: a clearly-planar but tiny (σ ≈ 1e-7) triangle still
+    # resolves — an absolute `gap ≤ tolerance` would wrongly reject it.
+    tiny = Point3Bundle.from_array([[0, 0, 0], [1e-7, 0, 0], [0, 1e-7, 0]]).fit_plane()
+    assert np.allclose(np.abs(tiny.normal().resolve().vector), [0, 0, 1])
 
 
 def test_fit_plane_degeneracy() -> None:
@@ -134,6 +138,32 @@ def test_fit_plane_degeneracy() -> None:
     # isotropic (ball-like — a cube's 8 corners): the gap test catches it where σ₂>0 would not
     cube = [[x, y, z] for x in (0, 1) for y in (0, 1) for z in (0, 1)]
     assert isinstance(Point3Bundle.from_array(cube).fit_plane().decide(), Unresolvable)
+
+
+def test_fit_line() -> None:
+    # a slightly-noisy collinear (along +x) cloud fits a line with a ±x direction through it
+    cloud = Point3Bundle.from_array([[0, 0, 0], [1, 0.01, 0], [2, -0.01, 0], [3, 0, 0.01]])
+    line = cloud.fit_line()
+    assert np.allclose(np.abs(line.direction().resolve().vector), [1, 0, 0], atol=0.02)
+    assert line.distance_to(Point3.at(1.5, 0, 0)).resolve() < 0.02  # the points hug the line
+    # the fitted sign is arbitrary; direction_along resolves it
+    ordered = [Point3.at(0, 0, 0), Point3.at(3, 0, 0)]
+    assert line.direction_along(ordered).resolve().vector[0] > 0
+    # the gap test is *relative* to the cloud's scale: a clearly-linear cloud resolves at any
+    # magnitude. A tiny one (σ₀ ≈ 1e-7) still resolves — an absolute `gap ≤ tolerance` would wrongly reject it.
+    tiny = Point3Bundle.from_array([[0, 0, 0], [1e-7, 0, 0], [2e-7, 0, 0]]).fit_line()
+    assert np.allclose(np.abs(tiny.direction().resolve().vector), [1, 0, 0])
+
+
+def test_fit_line_degeneracy() -> None:
+    assert "at least two" in Point3Bundle.from_array([[0, 0, 0]]).fit_line().decide().reason
+    # isotropic (no dominant axis — a square's 4 corners): the gap test catches it
+    square = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]
+    isotropic = Point3Bundle.from_array(square).fit_line()
+    assert isinstance(isotropic.decide(), Unresolvable)
+    assert "no dominant direction" in isotropic.decide().reason
+    # but two distinct points always resolve (σ₂ = 0, so the top gap is full)
+    assert isinstance(Point3Bundle.from_array([[0, 0, 0], [1, 1, 1]]).fit_line().resolve(), object)
 
 
 def test_vec3_bundle() -> None:
