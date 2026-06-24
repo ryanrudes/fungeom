@@ -37,6 +37,19 @@ def test_antipodal_is_unresolvable() -> None:
     assert "antipodal" in decision.reason
 
 
+def test_exact_interior_sample_skips_the_blend() -> None:
+    # Reconstruction-contract invariant (docs/time.md): an exact sample is that sample,
+    # never routed through the blend. Adjacent samples here are antipodal (+x, -x, +x),
+    # so a kernel that slerped at the exact INTERIOR node t=1.0 would wrongly fail — it
+    # must return the node verbatim. (The bug this guards predated bundles; a
+    # support-changing blend merely made the same latent fault observable.)
+    signal = Direction3Signal.from_samples([0.0, 1.0, 2.0], [[1, 0, 0], [-1, 0, 0], [1, 0, 0]])
+    assert signal.at(1.0).resolve().vector.tolist() == [-1.0, 0.0, 0.0]  # exact node, not slerped
+    decision = signal.at(0.5).decide()  # ...but a strictly-between time IS the antipodal slerp
+    assert isinstance(decision, Unresolvable)
+    assert "antipodal" in decision.reason
+
+
 def test_at_bridges_to_direction_algebra() -> None:
     signal = Direction3Signal.from_samples([0.0, 1.0], [[1, 0, 0], [0, 1, 0]])
     angle = signal.at(0.0).angle_to(Direction3.of(0, 1, 0)).resolve()

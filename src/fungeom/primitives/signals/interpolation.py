@@ -12,6 +12,12 @@ serves scalars, vectors, directions, and rotations alike; only the blend differs
 every value type; ``linear`` calls ``blend.between`` and inherits its partiality
 (e.g. antipodal directions). Kernels only ever see a time within the sample range
 — a signal decides off-domain queries before reaching here.
+
+**Invariant (the reconstruction contract, ``docs/time.md``):** an *exact* sample
+(``t == times[i]``) returns ``values[i]`` verbatim — every kernel short-circuits it,
+so ``blend.between`` is invoked only *strictly between* samples. A blend may be
+value-partial (slerp) or support-changing (a point-cloud blend), and this is what
+keeps either from corrupting a value the user asked for *exactly*.
 """
 
 from __future__ import annotations

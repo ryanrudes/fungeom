@@ -140,6 +140,39 @@ A signal has partiality at *two* levels, and they are different questions:
 asking for a value inside a coverage gap is `Unresolvable`, with a reason that
 names the gap. Both ride the existing `Resolvable`/`Unresolvable` channel.
 
+### The reconstruction contract (what a `Blend` and a kernel may assume)
+
+Reading a signal at `t` composes a `Coverage` support, an `Interpolation` kernel, a
+`Boundary`, and a `Blend`. Three invariants tie them together. They stayed *implicit*
+until a **support-changing** blend — one whose output is narrower than its inputs
+(e.g. a point-cloud blend that keeps only the markers present in *both* frames) —
+stress-tested them into the open, so they are worth stating: every prior blend was
+support-*preserving*, and the assumptions only held by accident.
+
+1. **Support governs *where*; the value carries *what*.** `t` must lie in the support
+   (off it, the boundary clamps past the outer hull, else `Unresolvable`). *Within*
+   support the reconstructed value may still be partial or narrower: a **value-partial**
+   blend (slerp of antipodes) is `Unresolvable` at `t` though `t` is in support; a
+   **support-changing** blend yields a *value* whose own support is narrower than the
+   signal's. A signal's support is about *temporal* presence, not the value's internal
+   completeness.
+
+2. **An exact sample is the sample — never routed through the blend.** For every
+   kernel, evaluating at `t == times[i]` returns `values[i]` verbatim; the blend is
+   invoked only *strictly between* samples. This *must* hold because a blend may be
+   value-partial (slerp would wrongly fail at an exact sample adjacent to an antipode)
+   or support-changing (a cloud blend would wrongly drop a key at an exact frame). A
+   blend is otherwise a pure function and may be partial *or* support-changing.
+
+3. **Boundary and support are per-signal.** A `hold`/`wrap` boundary clamps against
+   *that signal's own* `[first, last]`. So a signal **re-reconstructed** from a subset
+   of another's samples (the entity-axis `key()` slice of a cloud signal, say) matches
+   the source's reconstruction only when that reconstruction is expressible as a single
+   series over the subset — true for linear + `undefined`, false for select-style
+   kernels (`hold`/`nearest`) and off-hull boundaries (`hold`/`wrap`). A derived signal
+   that cannot match must **refuse** (`Unresolvable`), not silently disagree —
+   decidability applied to reconstruction itself.
+
 ### Why *not* the free-variable / open-graph alternative
 
 A tempting design is to make `Instant` a **free variable**: a special leaf so

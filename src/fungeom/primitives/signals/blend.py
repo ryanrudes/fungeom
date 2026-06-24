@@ -19,7 +19,16 @@ from fungeom.core.resolvability import Resolvability
 
 
 class Blend[V](Protocol):
-    """A way to combine two ``V`` samples at an interpolation fraction."""
+    """A way to combine two ``V`` samples at an interpolation fraction.
+
+    A blend is a *pure* function and may be **partial** (return ``Unresolvable`` —
+    antipodal directions) and/or **support-changing** (return a value whose own
+    support is narrower than the inputs' — a point-cloud blend keeps only the keys
+    present in both samples). The signal core only ever calls it *strictly between*
+    samples (``0 < frac < 1``): an exact sample returns that sample verbatim, never
+    routed through the blend (see the reconstruction contract in ``docs/time.md``), so
+    a value-partial or support-changing blend can never corrupt an exact sample.
+    """
 
     def between(self, a: V, b: V, frac: float) -> Resolvability[V]:
         """The value a fraction ``frac`` of the way from ``a`` to ``b`` (possibly partial)."""
