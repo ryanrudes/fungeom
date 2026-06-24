@@ -60,3 +60,14 @@ def test_partialities() -> None:
     assert isinstance((Scalar.of(0.0) ** Scalar.of(-1.0)).decide(), Unresolvable)  # 0 ** -1
     assert isinstance(Scalar.of(2.0).clamp(3.0, 0.0).decide(), Unresolvable)  # low > high
     assert isinstance(Scalar.of(1.0).mod(0.0).decide(), Unresolvable)  # mod 0
+
+
+def test_comparisons() -> None:
+    one, two = Scalar.of(1.0), Scalar.of(2.0)
+    assert one.lt(two).resolve() is True
+    assert two.lt(one).resolve() is False
+    assert one.le(one).resolve() is True
+    assert two.gt(one).resolve() is True
+    assert one.ge(two).resolve() is False
+    assert two.ge(two).resolve() is True
+    assert one.lt(5.0).resolve() is True  # bare numbers coerce

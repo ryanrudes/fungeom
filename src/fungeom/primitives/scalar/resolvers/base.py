@@ -9,6 +9,7 @@ keep module load acyclic.
 from __future__ import annotations
 
 from fungeom.core.resolver import Resolver
+from fungeom.primitives.boolean.resolvers.base import Bool
 
 
 class Scalar(Resolver[float]):
@@ -17,14 +18,21 @@ class Scalar(Resolver[float]):
     Construct one with :meth:`of`; compose with the usual operators
     (``+ - * / **``, ``abs``) and :meth:`min`, :meth:`max`, :meth:`sqrt`,
     :meth:`clamp`, :meth:`sign`, :meth:`floor`, :meth:`ceil`, :meth:`round`,
-    :meth:`mod` — each returns a new ``Scalar``. ``resolve()`` yields a
-    ``float`` (``Scalar.Value``). Bare numbers passed to these methods are lifted
-    into literal scalars automatically, so ``v.scale(2.0)`` and
-    ``v.scale(other.norm())`` both work.
+    :meth:`mod` — each returns a new ``Scalar`` — plus the ordered comparisons
+    :meth:`lt`, :meth:`le`, :meth:`gt`, :meth:`ge` (→ :class:`~fungeom.Bool`).
+    ``resolve()`` yields a ``float`` (``Scalar.Value``). Bare numbers passed to
+    these methods are lifted into literal scalars automatically, so
+    ``v.scale(2.0)`` and ``v.scale(other.norm())`` both work.
 
     Some operations are *partial*: dividing by a scalar that resolves to zero, or
     ``sqrt`` of a negative, is :class:`~fungeom.Unresolvable` rather than
     an error — see :meth:`decide`.
+
+    Comparisons return a deferred ``Bool``, *not* a Python ``bool`` — they are
+    value-dependent and can themselves be ``Unresolvable`` — so the comparison
+    operators (``<``, ``<=``, …) are deliberately **not** overloaded (that would
+    force eager truth and silently break ``sorted``/``min``/``max``). Use the
+    named methods.
     """
 
     type Value = float
@@ -143,3 +151,31 @@ class Scalar(Resolver[float]):
         from fungeom.primitives.scalar.resolvers.modulo import ModScalar
 
         return ModScalar(value=self, modulus=as_scalar_resolver(modulus))
+
+    def lt(self, other: float | Scalar) -> Bool:
+        """Whether this scalar is strictly less than ``other`` (→ ``Bool``)."""
+        from fungeom.primitives.boolean.resolvers.comparison import LessThan
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+
+        return LessThan(a=self, b=as_scalar_resolver(other))
+
+    def le(self, other: float | Scalar) -> Bool:
+        """Whether this scalar is less than or equal to ``other`` (→ ``Bool``)."""
+        from fungeom.primitives.boolean.resolvers.comparison import LessEqual
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+
+        return LessEqual(a=self, b=as_scalar_resolver(other))
+
+    def gt(self, other: float | Scalar) -> Bool:
+        """Whether this scalar is strictly greater than ``other`` (→ ``Bool``)."""
+        from fungeom.primitives.boolean.resolvers.comparison import LessThan
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+
+        return LessThan(a=as_scalar_resolver(other), b=self)
+
+    def ge(self, other: float | Scalar) -> Bool:
+        """Whether this scalar is greater than or equal to ``other`` (→ ``Bool``)."""
+        from fungeom.primitives.boolean.resolvers.comparison import LessEqual
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+
+        return LessEqual(a=as_scalar_resolver(other), b=self)
