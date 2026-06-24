@@ -100,6 +100,27 @@ blend makes `at(t)` `Unresolvable` *in*-support without shrinking the support. S
 support = presence; reductions are **strict over op-failures** but **flow over
 absences**. Keeping these apart is what makes the mask honest rather than mush.
 
+### Where the mask comes from — construction is strict
+
+Absence must be *deliberate*, never a silent catch of op-failure, or the two sources
+blur back together. So **construction is strict**: `Bundle.of([resolvers])` and
+`from_array` gather their inputs and are `Unresolvable` if any element is — matching
+`Signal.from_samples`, which fails to *build* on a bad sample rather than dropping
+it. A mask is set only **explicitly** (a presence argument / sentinel at
+construction — an occluded frame's missing markers) or **produced** by an operation
+(`where`, a `zip` intersection, `traverse` resampling into a gap). Op-failure stays
+strict; absence stays data-driven.
+
+### How lifting aligns the index — the axis kind decides
+
+The one place a `Bundle`'s lift genuinely diverges from a `Signal`'s: a **metric**
+axis **unions** indices (reconstruction fills between samples), but a **nominal**
+axis **intersects** them (there is nothing to reconstruct a missing key from). So
+`Signal`'s `decide_lifted` aligns on the *union* of sample instants (∩ supports),
+whereas `Bundle`'s `zip` aligns on the *intersection* of keys. Both still
+**intersect supports**. Same principle, opposite index-set operation — a direct
+consequence of nominal-vs-metric.
+
 ---
 
 ## The grand analogy — and where retargeting lives
@@ -125,11 +146,22 @@ time-correspondence. We build the field (rung 2) now and *reserve* the
 grounding/correspondence layer (rung 3) for when `retarget` reaches for it — exactly
 as `TimeMap.through` shipped while its estimators stayed parked.
 
+A `RosterMap` carries only the **identity** correspondence — *which* entity is which.
+The **geometric** transfer of retargeting (where a target joint actually goes given
+the source markers) is a fitted/numeric map layered on top — *not* part of
+`RosterMap`, the same way `TimeMap.through` recovers the alignment but the estimator
+that *discovers* the landmarks is parked numerics.
+
 The **identity ladder**:
 
 1. positional (`int`) — anonymous;
 2. keyed (labels) — nominal identity; **← build this (rung 2)**;
 3. groundable `Roster` + `RosterMap` correspondence — **reserved (rung 3, retarget's home)**.
+
+A `Roster` is to the nominal axis what `Coverage` is to time: the **support set** for
+that axis (a set of keys vs a set of intervals), with the same union / intersection /
+difference algebra — rung 3 just adds identity and grounding on top. So even the
+*support types* mirror across the table, not only the fields and maps.
 
 ---
 
@@ -147,7 +179,10 @@ field.at(t).at(k)  ==  field.at(k).at(t)
 
 sample-then-index = index-then-sample, undefined under the same condition.
 Composition gives this for free; a bespoke `(T, N, d)` type would force you to
-re-prove it by hand.
+re-prove it by hand. And the proposed representation *satisfies* it by construction:
+`field.at(t)` masks key *k* unless *k* brackets *t* on both sides — which is exactly
+the condition under which *k*'s own trajectory `field.at(k)` is defined at *t*. Both
+sides reduce to the same per-key bracketing.
 
 The result that shows the abstraction is carved at the joint: **the bundle's
 `Blend` is partial, and that one fact lets a single `Signal[Bundle]` serve two data
@@ -174,10 +209,10 @@ per-type "geometry kit" of array (un)stacking + `Blend`.)
 (per-entity independent clocks — heterogeneous/asynchronous sensors) are different
 objects:
 
-- **`traverse` / `sequence`:** `Bundle[Signal] → Signal[Bundle]` — choose a common
-  `Sampling`, resample each signal onto it, stack. **Partial:** a signal undefined at
-  a sample time → that cell is masked. *This is where the `(T, N)` mask is created*,
-  from the per-signal `Coverage`s.
+- **`traverse` / `sequence`:** `Bundle[Signal] → Signal[Bundle]` — resample each
+  signal onto a caller-given common `Sampling` (explicit, mirroring `resample`), then
+  stack. **Partial:** a signal undefined at a sample time → that cell is masked.
+  *This is where the `(T, N)` mask is created*, from the per-signal `Coverage`s.
 - its inverse, **distribute:** `Signal[Bundle] → Bundle[Signal]` — project out each
   key's trajectory. **Total.**
 
@@ -233,7 +268,10 @@ signals already have.)
   entity axis (empty support → `Unresolvable`). (`bounds()`/AABB deferred — wants a
   result type.)
 - **Traversable** — the `Bundle[Signal] ↔ Signal[Bundle]` bridge above.
-- index / filter — `at(key)`, `keys()`, `support()`, `where(keys)`.
+- index / filter — `at(key) → V` (bridges to the static algebra), `present(key) →
+  Bool` (the decidable analog of `Signal.defined_at`), `keys()` / `support()`
+  (concrete key collections, as `Sampling` exposes its times — upgraded to a `Roster`
+  at rung 3), `where(keys)`.
 
 ---
 
@@ -299,6 +337,10 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
   decidable return type.
 - **Interpolating anonymous, variable-`N` clouds** → genuinely undefined →
   `Unresolvable` by design, not a gap to fill.
+- **Zipping anonymous clouds** → positional `zip` is correspondence-*by-position*,
+  valid only when the caller guarantees the two clouds correspond slot-for-slot.
+  Clouds with no shared identity are **not** zippable; producing a correspondence
+  between them is a numeric matcher (parked) whose output is a `RosterMap`.
 
 ---
 
