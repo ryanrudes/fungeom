@@ -5,6 +5,7 @@ from __future__ import annotations
 from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.direction2.resolvers.base import Direction2
+from fungeom.primitives.line2.resolvers.base import Line2
 from fungeom.primitives.point2.resolvers.base import Point2
 from fungeom.primitives.ray2.value import Ray2Value
 from fungeom.primitives.scalar.resolvers.base import Scalar
@@ -78,3 +79,13 @@ class Ray2(Resolver[Ray2Value]):
         from fungeom.primitives.ray2.resolvers.reversed import Ray2Reversed
 
         return Ray2Reversed(ray=self)
+
+    def intersect(self, line: Line2) -> Point2:
+        """Where this ray first meets ``line`` (the planar raycast → ``Point2``).
+
+        Unresolvable when the ray is parallel to the line, or when the line lies behind the
+        ray's origin (the ray points away from it).
+        """
+        from fungeom.primitives.ray2.resolvers.intersect import Ray2LineIntersection
+
+        return Ray2LineIntersection(ray=self, line=line)

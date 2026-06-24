@@ -35,6 +35,14 @@ def test_query() -> None:
     assert line.contains(Point3.at(7, 1, 0)).resolve() is False
 
 
+def test_point_at_is_total_along_the_infinite_line() -> None:
+    line = _x_axis()
+    assert np.allclose(line.point_at(3.0).resolve().coord, [3, 0, 0])
+    assert np.allclose(line.point_at(-2.0).resolve().coord, [-2, 0, 0])  # a line extends both ways
+    # round-trips with parameter()
+    assert line.resolve().parameter(line.point_at(5.0).resolve().coord) == 5.0
+
+
 def test_direction_along_orients_the_line() -> None:
     line = _x_axis()
     forward = [Point3.at(0, 1, 0), Point3.at(2, -1, 0), Point3.at(5, 3, 0)]  # increasing x (off the line is fine)

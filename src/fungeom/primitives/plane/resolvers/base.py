@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.direction3.resolvers.base import Direction3
+from fungeom.primitives.line.resolvers.base import Line
 from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.scalar.resolvers.base import Scalar
@@ -149,3 +150,9 @@ class Plane(Resolver[PlaneValue]):
         from fungeom.primitives.plane.resolvers.winding_normal import PlaneWindingNormal
 
         return PlaneWindingNormal(plane=self, points=tuple(points), tolerance=tolerance)
+
+    def intersect(self, other: Plane) -> Line:
+        """The line where this plane meets ``other`` (→ ``Line``; Unresolvable if parallel)."""
+        from fungeom.primitives.plane.resolvers.intersect import PlaneIntersect
+
+        return PlaneIntersect(first=self, second=other)

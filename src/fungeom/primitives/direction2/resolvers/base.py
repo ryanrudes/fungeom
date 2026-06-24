@@ -79,6 +79,19 @@ class Direction2(Resolver[Direction2Value]):
 
         return Direction2AngleTo(a=self, b=other)
 
+    def signed_angle_to(self, other: Direction2) -> Scalar:
+        """The signed angle (radians) to ``other`` in ``(-π, π]`` — positive counter-clockwise (→ ``Scalar``)."""
+        from fungeom.primitives.direction2.resolvers.signed_angle import Direction2SignedAngle
+
+        return Direction2SignedAngle(a=self, b=other)
+
+    def slerp(self, other: Direction2, t: float | Scalar) -> Direction2:
+        """Rotate toward ``other`` by a fraction ``t`` of the angle between them (Unresolvable if antipodal)."""
+        from fungeom.primitives.direction2.resolvers.slerp import SlerpDirection2
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+
+        return SlerpDirection2(a=self, b=other, t=as_scalar_resolver(t))
+
     def dot(self, other: Direction2) -> Scalar:
         """The dot product with ``other`` — the cosine of the angle between them."""
         from fungeom.primitives.direction2.resolvers.dot import Direction2Dot

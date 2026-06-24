@@ -91,3 +91,9 @@ class Line(Resolver[LineValue]):
         from fungeom.primitives.line.resolvers.direction_along import LineDirectionAlong
 
         return LineDirectionAlong(line=self, points=tuple(points))
+
+    def point_at(self, distance: float) -> Point3:
+        """The point at signed arc-length ``distance`` from the origin along the direction (→ ``Point3``)."""
+        from fungeom.primitives.line.resolvers.point_at import LinePointAt
+
+        return LinePointAt(line=self, distance=distance)

@@ -36,6 +36,21 @@ def test_compose_inverse_and_decompose() -> None:
     assert np.allclose(rotation_only.translation, [0, 0])  # translation dropped
 
 
+def test_slerp_interpolates_rotation_and_translation() -> None:
+    a = Transform2.identity()
+    b = Transform2.translation(Vec2.of(4, 0)) @ Transform2.rotation(np.pi / 2)
+    half = a.slerp(b, 0.5).resolve()
+    assert np.isclose(half.angle(), np.pi / 4)  # rotation interpolated
+    assert np.allclose(half.translation, [2, 0])  # translation lerped
+    assert a.slerp(b, 0.0).resolve().approx_equal(a.resolve())  # endpoints
+    assert a.slerp(b, 1.0).resolve().approx_equal(b.resolve())
+    assert np.isclose(a.slerp(b, Scalar.of(0.5)).resolve().angle(), np.pi / 4)  # deferred t
+    # the rotation takes the *shortest* arc: −10° to +10° passes through 0°, not 180°
+    left = Transform2.rotation(np.radians(-10))
+    right = Transform2.rotation(np.radians(10))
+    assert np.isclose(left.slerp(right, 0.5).resolve().angle(), 0.0, atol=1e-9)
+
+
 def test_deferred_resolvability_propagates() -> None:
     # a transform built from a deferred scalar/vector inherits resolvability
     assert Transform2.rotation(Scalar.of(0)).resolve().approx_equal(RigidTransform2.identity())

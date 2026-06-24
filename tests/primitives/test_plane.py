@@ -108,6 +108,21 @@ def test_winding_normal_partiality() -> None:
     assert "no area" in decision.reason
 
 
+def test_intersect_two_planes_meet_in_a_line() -> None:
+    xy = Plane.through(Point3.at(0, 0, 5), Direction3.of(0, 0, 1))  # z = 5
+    xz = Plane.through(Point3.at(0, 3, 0), Direction3.of(0, 1, 0))  # y = 3
+    line = xy.intersect(xz)
+    assert np.allclose(np.abs(line.direction().resolve().vector), [1, 0, 0])  # along x
+    assert np.allclose(line.origin().resolve().coord, [0, 3, 5])  # the closest point to the origin
+    assert xy.contains(line.origin()).resolve() and xz.contains(line.origin()).resolve()
+    # parallel (and anti-parallel) planes never meet
+    parallel = xy.intersect(Plane.through(Point3.at(0, 0, 9), Direction3.of(0, 0, 1)))
+    decision = parallel.decide()
+    assert isinstance(decision, Unresolvable)
+    assert "parallel planes" in decision.reason
+    assert isinstance(xy.intersect(xy.flipped()).decide(), Unresolvable)
+
+
 def test_plane_value_helpers() -> None:
     value = _ground().resolve()
     assert value.approx_equal(Plane.through(Point3.at(9, 9, 5), Direction3.of(0, 0, 1)).resolve())  # same plane

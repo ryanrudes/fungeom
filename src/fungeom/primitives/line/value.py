@@ -55,6 +55,10 @@ class LineValue:
         coord = as_vec3(p)
         return float(np.linalg.norm(coord - self.project(coord)))
 
+    def point_at(self, distance: float) -> Float3:
+        """The point at signed arc-length ``distance`` from ``point`` along the direction."""
+        return as_vec3(self.point + distance * self.direction)
+
     def reversed(self) -> LineValue:
         """The same line with the opposite (negated) direction."""
         return LineValue(point=self.point, direction=as_vec3(-self.direction))

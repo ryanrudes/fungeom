@@ -75,6 +75,13 @@ class Transform2(Resolver[RigidTransform2]):
 
         return InverseTransform2(transform=self)
 
+    def slerp(self, other: Transform2, t: float | Scalar) -> Transform2:
+        """Smoothly interpolate toward ``other`` (rotation along the shortest arc, translation linearly)."""
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+        from fungeom.primitives.transform2.resolvers.slerp import SlerpTransform2
+
+        return SlerpTransform2(a=self, b=other, t=as_scalar_resolver(t))
+
     def transform_vector(self, vector: Vec2) -> Vec2:
         """Apply this transform to a free ``vector`` — rotated only, not translated."""
         from fungeom.primitives.transform2.resolvers.applied_vector import TransformedVec2

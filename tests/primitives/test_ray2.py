@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fungeom import Direction2, Point2, Ray2, Unresolvable
+from fungeom import Direction2, Line2, Point2, Ray2, Unresolvable
 from fungeom.values import Ray2Value
 
 
@@ -37,6 +37,20 @@ def test_point_at_and_reversed_and_partiality() -> None:
     assert isinstance(ray.point_at(-1.0).decide(), Unresolvable)
     assert np.allclose(ray.reversed().direction().resolve().vector, [-1, 0])
     assert "distinct from its origin" in Ray2.from_to(Point2.at(1, 1), Point2.at(1, 1)).decide().reason
+
+
+def test_intersect_line_is_the_planar_raycast() -> None:
+    wall = Line2.through(Point2.at(5, 0), Direction2.of(0, 1))  # the vertical line x = 5
+    hit = Ray2.through(Point2.at(0, 0), Direction2.of(1, 0)).intersect(wall)  # +x ray
+    assert np.allclose(hit.resolve().coord, [5, 0])
+    # pointing away → the line is behind the origin
+    away = Ray2.through(Point2.at(0, 0), Direction2.of(-1, 0)).intersect(wall)
+    assert isinstance(away.decide(), Unresolvable)
+    assert "behind the ray" in away.decide().reason
+    # parallel to the line → no unique hit
+    parallel = Ray2.through(Point2.at(0, 0), Direction2.of(0, 1)).intersect(wall)
+    assert isinstance(parallel.decide(), Unresolvable)
+    assert "parallel to the line" in parallel.decide().reason
 
 
 def test_value_helpers() -> None:

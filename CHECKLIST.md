@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 846 tests · **100 % line coverage** (enforced via
+**Current status:** 873 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -58,15 +58,15 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Transform | ✅ | 2026-06-23 | Added `transform_vector`, `transform_direction`, `translation_part`, `rotation_part` (all total). Deferred: `rotation_between`/`look_at` constructors (axis ambiguity), `pow`/scaled interpolation (≈ `identity.slerp`), `from_quaternion`/`from_euler` (value-level `RigidTransform.from_rotation` exists). |
 | Frame | ✅ | 2026-06-23 | Added `relative_to` → `Transform` (partial: either ungrounded). Deferred: `from_transform` (≡ `world.attach`), `to_world_transform` (≡ `relative_to(Frame.world)`). |
 | Point3 | ✅ | 2026-06-23 | Added `transformed_by` (rigid motion), `reflect_across` (central symmetry) — both total. Deferred: `barycentric` (≡ `affine`), `as_vector_from` (≡ `displacement_to`), reframe/express-in-frame (value-level `Point3Value.to_frame` exists; resolver form needs a frame-typed target API). |
-| Plane | — | (newly built 2026-06-24) | **New primitive** (the surface/patch-definition vocabulary). Built directly with its intended surface (`through`/`through_points`/`spanned_by`; `normal`/`origin`/`project`/`signed_distance`/`distance_to`/`contains`/`facing`/`flipped`/`offset`/`project_direction`/`frame`/`winding_normal`) + the `Point3Bundle.fit_plane` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators. |
-| Line | — | (newly built 2026-06-24) | **New primitive** (the tangent/axis vocabulary, sibling to `Plane`). Built directly with its intended surface (`through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along`) + the `Point3Bundle.fit_line` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators (e.g. an `angle_to`/`intersection`/`closest_approach` between two lines, a `point_at(t)`). |
-| Ray | — | (newly built 2026-06-24) | **New primitive** (the half-line; completes Line/Ray/Segment). `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed` — `project`/`distance_to` clamp behind the origin, `point_at` partial for a negative distance. **Completeness-audit pending** (e.g. `intersect` a plane → `Point3`, `to_line`). |
-| Direction2 | — | (newly built 2026-06-24) | **New primitive** — the first member of the **2D geometry stack** (mirrors `Direction3`). `of`/`towards`/`from_angle`; `reversed`/`perpendicular`/`angle`/`angle_to`/`dot`/`as_vector`. **Completeness-audit pending** (e.g. `slerp`/`rotate(angle)`, a signed `angle_to`). |
-| Line2 / Ray2 / Segment2 | — | (newly built 2026-06-24) | **New primitives** — the 2D line family (the 2D-stack shapes). `Line2` merges the `Line` + `Plane` roles (a 2D line is a hyperplane: it carries `normal`/`signed_distance`); `Ray2`/`Segment2` mirror `Ray`/`Segment` with the same clamp/range partiality. Built over `Point2`/`Direction2`. **Completeness-audit pending** (e.g. `Line2.intersect`, `Segment2.to_line2`). |
-| Point2 | — | (newly built 2026-06-24) | **New primitive** — the framed 2D position, capstone of the 2D stack (mirrors `Point3`). `at`/`in_frame`/`centroid`/`affine`; `translate`/`lerp`/`midpoint`/`displacement_to`→`Vec2`/`distance_to`/`direction_to`→`Direction2`/`transformed_by`(`Transform2`)/`reflect_across`. World-anchors on resolve; ungrounded frame → Unresolvable. **Completeness-audit pending**. |
-| Frame2 | — | (newly built 2026-06-24) | **New primitive** — the 2D frame tree (mirrors `Frame`; rooted at `WORLD_FRAME2`, edges are `RigidTransform2`). `world`/`detached`/`known`/`attach`/`relative_to`→`Transform2`. Resolving is partial for an ungrounded frame. **Completeness-audit pending**. |
-| Transform2 | — | (newly built 2026-06-24) | **New primitive** — SE(2), the 2D rigid-motion member of the stack (mirrors `Transform`; a rotation is a single angle, so `rotation` is total). `identity`/`known`/`translation`/`rotation`; `@`/`inverse`/`transform_vector`/`transform_direction`/`translation_part`/`rotation_part`/`angle`. Note the `RotationTransform2.radians` field (avoids shadowing `Transform2.angle()` — the field/method trap). **Completeness-audit pending** (e.g. `slerp`, `from_point_pairs`). |
-| Segment | — | (newly built 2026-06-24) | **New primitive** (the finite segment / bone). `between`; `start`/`end`/`direction`/`length`/`midpoint`/`project`/`distance_to`/`contains`/`at`/`parameter_of`/`reversed` — clamps to the endpoints; `direction` partial when degenerate, `at` partial outside `[0,1]`. **Completeness-audit pending** (e.g. `to_line`/`to_ray`, `closest_approach` between two segments). |
+| Plane | ✅ | 2026-06-24 | Added `intersect(Plane)→Line` (the line where two planes meet; partial: parallel/anti-parallel — exact-zero `n₁×n₂`). Surface was already rich (`through`/`through_points`/`spanned_by`; `normal`/`origin`/`project`/`signed_distance`/`distance_to`/`contains`/`facing`/`flipped`/`offset`/`project_direction`/`frame`/`winding_normal`) + `Point3Bundle.fit_plane`. Deferred (trivially composable): `reflect(point)` (≡ `point.lerp(project, 2)`), `angle_to(plane)` (≡ normals' `angle_to`), `parallel_to`/`perpendicular_to`; `intersect_line(Line)→Point3` belongs on `Ray`/`Line` as `intersect(plane)` (audited there). |
+| Line | ✅ | 2026-06-24 | Added `point_at(distance)→Point3` (signed arc-length along the infinite line; total). Surface already had `through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along` + `Point3Bundle.fit_line`. Deferred (trivially composable / niche): `angle_to(Line)` (≡ directions' `angle_to`), `is_parallel` (Bool), `reversed` (≡ `through(origin, direction.reversed())`), line-line `closest_approach`/`distance_to` (skew-line numerics, wants a consumer); `intersect(Plane)→Point3` would cycle (`plane` imports `line`) — line∩plane lives on the `Plane`/`Ray` side. |
+| Ray | ✅ | 2026-06-24 | Added `intersect(Plane)→Point3` — the raycast (`t = (planePoint−origin)·n / (dir·n)`; partial: parallel `dir·n==0`, or hit behind the origin `t<0`). Surface already had `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed`. Deferred (trivially composable): `to_line()` (≡ `Line.through(origin, direction)`). |
+| Direction2 | ✅ | 2026-06-24 | Added `signed_angle_to(other)→Scalar` (signed CCW angle in (-π,π], total — a 2D-only notion the unsigned `angle_to` and 3D `Direction3` can't express) and `slerp(other,t)` (partial: antipodal, parity with `Direction3.slerp`). Surface had `of`/`towards`/`from_angle`; `reversed`/`perpendicular`/`angle`/`angle_to`/`dot`/`as_vector`. Deferred (composable): `rotated_by`/`rotate(angle)` (≡ `Transform2.rotation(θ).transform_direction`). |
+| Line2 / Ray2 / Segment2 | ✅ | 2026-06-24 | **Line2**: added `intersect(Line2)→Point2` (two 2D lines meet in a point — the canonical planar op; partial: parallel via exact-zero `dir×dir`) and `point_at(distance)→Point2` (parity with `Line`). **Ray2**: added `intersect(Line2)→Point2` — the planar raycast (partial: parallel / behind origin). **Segment2**: no gaps — surface matches the reviewed 3D `Segment`; deferred (composable/fiddly) `to_line2` (≡ `Line2.through_points`) and segment∩segment (multiple partial cases — wants a careful design + consumer). |
+| Point2 | ✅ | 2026-06-24 | **No gaps** — the surface mirrors the already-audited `Point3` exactly (`at`/`in_frame`/`centroid`/`affine`; `translate`/`lerp`/`midpoint`/`displacement_to`/`distance_to`/`direction_to`/`transformed_by`/`reflect_across`). Point3's deferrals apply identically (`barycentric`≡`affine`, `as_vector_from`≡`displacement_to`, resolver-form reframe needs a frame-typed target API). No 2D-specific gap (a signed angle at a vertex composes via `direction_to(...).signed_angle_to(...)`). |
+| Frame2 | ✅ | 2026-06-24 | **No gaps** — the surface mirrors the already-audited `Frame` exactly (`world`/`detached`/`known`/`attach`/`relative_to`→`Transform2`; ungrounded → Unresolvable). Frame's deferrals apply identically (`from_transform`≡`world.attach`, `to_world_transform`≡`relative_to(world)`). |
+| Transform2 | ✅ | 2026-06-24 | Added `slerp(other,t)→Transform2` (rotation along the shortest SO(2) arc + linear translation; total — closes the parity gap vs `Transform.slerp`). Surface already had `identity`/`known`/`translation`/`rotation`; `@`/`inverse`/`transform_vector`/`transform_direction`/`translation_part`/`rotation_part`/`angle` (+`angle` is a 2D bonus over `Transform`). Deferred (consistent with `Transform` + numerics): `rotation_between`/`look_at` (composable / niche), `pow` (≈ `identity.slerp`), `from_point_pairs` (2D registration — a numeric fit, parked). |
+| Segment | ✅ | 2026-06-24 | **No gaps** — surface already complete for the finite-segment/bone use case (`between`; `start`/`end`/`direction`/`length`/`midpoint`/`project`/`distance_to`/`contains`/`at`/`parameter_of`/`reversed`). Deferred (composable / wants a consumer): `to_line`≡`Line.through_points(start,end)`, `to_ray`≡`Ray.from_to(start,end)`, `intersect(plane)→Point3` (the `[0,1]`-clamped raycast — useful but niche, and would need a matching `Segment2.intersect`; park until a consumer), segment-segment `closest_approach` (numerics). |
 | Duration | ✅ | 2026-06-23 | Added `min`, `max` (total), `clamp(low,high)` (partial low>high), and order comparisons `lt`/`le`/`gt`/`ge` → `Bool` (signed order; reuse the generic `LessThan`/`LessEqual`) — mirror Scalar. Deferred: `between` (≡ `Instant.duration_to`), `sign`/`hz` (niche). |
 | Instant | ✅ | 2026-06-23 | Added `min`, `max` (earliest/latest, total; time is ordered), `centroid` (partial empty), `affine` (partial empty/Σw=0) — mirror Point3 + 1-D order. Deferred: `clamp` (≡ `Interval.clamp`), `before`/`after` (need `Bool`). |
 | Interval | ✅ | 2026-06-23 | Added (composed) `shifted(by)` (total) and `expanded(by)` (partial: shrinks past empty, inherited from `between`). Deferred: `contains`/`overlaps` (need `Bool`), `union`→`Coverage` (layering — lives on `Coverage`). |
@@ -188,6 +188,8 @@ and `angle` where `Direction3` needs `cross`/`any_perpendicular`.
 | `perpendicular` | `PerpendicularDirection2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `angle` → `Scalar` | `Direction2OrientedAngle` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `angle_to` → `Scalar` | `Direction2AngleTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `signed_angle_to` → `Scalar` | `Direction2SignedAngle` | ✅ | ✅ | ✅ | — (total) | ✅ | ✅ |
+| `slerp` | `SlerpDirection2` | ✅ | ✅ | ✅ | ✅ (antipodal) | ✅ | ✅ |
 | `dot` → `Scalar` | `Direction2Dot` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `as_vector` → `Vec2` | `Direction2Vec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 
@@ -239,6 +241,7 @@ stack**). A 3x3 homogeneous matrix; a 2D **rotation is a single angle — no axi
 | `rotation` | `RotationTransform2` (field `radians`) | ✅ | ✅ | ✅ | — (total) | ✅ | ✅ |
 | `@` compose | `ComposedTransform2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `inverse` | `InverseTransform2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `slerp` | `SlerpTransform2` | ✅ | ✅ | ✅ | — (total) | ✅ | ✅ |
 | `transform_vector` | `TransformedVec2` → `Vec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `transform_direction` | `TransformedDirection2` → `Direction2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `translation_part` | `TranslationPart2` → `Vec2` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
@@ -343,6 +346,7 @@ surface frame). **`Direction3.any_perpendicular`** (the don't-care tangent) ship
 | `project_direction` → `Direction3` | `PlaneProjectDirection` | ✅ | ✅ | ✅ | ✅ (normal-parallel) | ✅ | ✅ |
 | `frame` → `Transform` | `PlaneFrame` | ✅ | ✅ | ✅ | ✅ (tangent ∥ normal) | ✅ | ✅ |
 | `winding_normal` → `Direction3` | `PlaneWindingNormal` | ✅ | ✅ | ✅ | ✅ (<3 pts / zero area) | ✅ | ✅ |
+| `intersect` → `Line` | `PlaneIntersect` | ✅ | ✅ | ✅ | ✅ (parallel) | ✅ | ✅ |
 
 ---
 
@@ -366,6 +370,7 @@ back marker projection and on-axis tests.
 | `project` → `Point3` | `LineProject` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `distance_to` → `Scalar` | `LineDistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `point_at` → `Point3` | `LinePointAt` | ✅ | ✅ | ✅ | — (total) | ✅ | ✅ |
 | `direction_along` → `Direction3` | `LineDirectionAlong` | ✅ | ✅ | ✅ | ✅ (<2 pts / non-monotone) | ✅ | ✅ |
 
 ---
@@ -388,6 +393,7 @@ behind it, and `point_at` refuses a negative distance — the half-line semantic
 | `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `point_at` → `Point3` | `RayPointAt` | ✅ | ✅ | ✅ | ✅ (negative distance) | ✅ | ✅ |
 | `reversed` | `RayReversed` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `intersect` → `Point3` | `RayPlaneIntersection` | ✅ | ✅ | ✅ | ✅ (parallel / behind origin) | ✅ | ✅ |
 
 ---
 
@@ -429,6 +435,8 @@ turn from the direction.
 | `project` → `Point2` | `Line2Project` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `signed_distance` / `distance_to` → `Scalar` | `Line2SignedDistance` / `Line2DistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `contains` → `Bool` | (composed) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `point_at` → `Point2` | `Line2PointAt` | ✅ | ✅ | ✅ | — (total) | ✅ | ✅ |
+| `intersect` → `Point2` | `Line2Intersect` | ✅ | ✅ | ✅ | ✅ (parallel) | ✅ | ✅ |
 
 ## Ray2 — value: `Ray2Value` (a 2D half-line) · Segment2 — value: `Segment2Value` (a finite 2D segment)
 
@@ -442,6 +450,7 @@ partial outside `[0, 1]`; degenerate `Segment2.direction` is Unresolvable), over
 | `Ray2.through` / `from_to` | `Ray2Through` / `Ray2FromTo` | ✅ | ✅ | ✅ | ✅ (coincident) | ✅ | ✅ |
 | `Ray2` origin/direction/project/distance_to/contains | `Ray2Origin` / `Ray2Direction` / `Ray2Project` / `Ray2DistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `Ray2.point_at` / `reversed` | `Ray2PointAt` / `Ray2Reversed` | ✅ | ✅ | ✅ | ✅ (negative dist) | ✅ | ✅ |
+| `Ray2.intersect` → `Point2` (raycast a `Line2`) | `Ray2LineIntersection` | ✅ | ✅ | ✅ | ✅ (parallel / behind) | ✅ | ✅ |
 | `Segment2.between` | `Segment2Between` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `Segment2` start/end/length/midpoint/project/distance_to | `Segment2Start` / `…End` / `…Length` / `…Midpoint` / `…Project` / `…DistanceTo` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `Segment2.direction` | `Segment2Direction` | ✅ | ✅ | ✅ | ✅ (degenerate) | ✅ | ✅ |

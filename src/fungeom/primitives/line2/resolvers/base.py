@@ -85,3 +85,15 @@ class Line2(Resolver[Line2Value]):
     def contains(self, point: Point2, tolerance: float = 1e-9) -> Bool:
         """Whether ``point`` lies on the line within ``tolerance`` (→ ``Bool``)."""
         return self.distance_to(point).le(tolerance)
+
+    def point_at(self, distance: float) -> Point2:
+        """The point at signed arc-length ``distance`` from the origin along the direction (→ ``Point2``)."""
+        from fungeom.primitives.line2.resolvers.point_at import Line2PointAt
+
+        return Line2PointAt(line=self, distance=distance)
+
+    def intersect(self, other: Line2) -> Point2:
+        """The point where this line crosses ``other`` (→ ``Point2``; Unresolvable if parallel)."""
+        from fungeom.primitives.line2.resolvers.intersect import Line2Intersect
+
+        return Line2Intersect(first=self, second=other)

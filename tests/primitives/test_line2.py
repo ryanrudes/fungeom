@@ -31,6 +31,24 @@ def test_plane_like_signed_distance_and_projection() -> None:
     assert line.contains(Point2.at(7, 1)).resolve() is False
 
 
+def test_intersect_two_lines_meet_in_a_point() -> None:
+    diagonal = Line2.through_points(Point2.at(0, 0), Point2.at(2, 2))  # y = x
+    anti = Line2.through_points(Point2.at(0, 4), Point2.at(4, 0))  # x + y = 4
+    assert np.allclose(diagonal.intersect(anti).resolve().coord, [2, 2])
+    # parallel lines never cross
+    parallel = Line2.through(Point2.at(0, 0), Direction2.of(1, 0)).intersect(
+        Line2.through(Point2.at(0, 1), Direction2.of(1, 0))
+    )
+    assert isinstance(parallel.decide(), Unresolvable)
+    assert "parallel lines" in parallel.decide().reason
+
+
+def test_point_at() -> None:
+    line = _x_axis()
+    assert np.allclose(line.point_at(3.0).resolve().coord, [3, 0])
+    assert np.allclose(line.point_at(-2.0).resolve().coord, [-2, 0])  # both ways along the infinite line
+
+
 def test_constructor_partiality() -> None:
     coincident = Line2.through_points(Point2.at(1, 1), Point2.at(1, 1))
     assert isinstance(coincident.decide(), Unresolvable)

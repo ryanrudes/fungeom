@@ -62,6 +62,10 @@ class Line2Value:
         """The unsigned perpendicular distance from ``p`` to the line."""
         return abs(self.signed_distance(p))
 
+    def point_at(self, distance: float) -> Float2:
+        """The point at signed arc-length ``distance`` from ``point`` along the direction."""
+        return as_vec2(self.point + distance * self.direction)
+
     def reversed(self) -> Line2Value:
         """The same line with the opposite direction (and so the opposite normal)."""
         return Line2Value(point=self.point, direction=as_vec2(-self.direction))

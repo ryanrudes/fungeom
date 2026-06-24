@@ -35,6 +35,29 @@ def test_combinators() -> None:
     assert np.allclose(east.as_vector().resolve(), [1, 0])
 
 
+def test_signed_angle_to_carries_the_planes_orientation() -> None:
+    east = Direction2.of(1, 0)
+    north = Direction2.of(0, 1)
+    south = Direction2.of(0, -1)
+    assert np.isclose(east.signed_angle_to(north).resolve(), np.pi / 2)  # CCW → positive
+    assert np.isclose(east.signed_angle_to(south).resolve(), -np.pi / 2)  # CW → negative
+    # the unsigned angle_to cannot tell them apart
+    assert np.isclose(east.angle_to(north).resolve(), east.angle_to(south).resolve())
+
+
+def test_slerp() -> None:
+    east = Direction2.of(1, 0)
+    north = Direction2.of(0, 1)
+    assert np.allclose(east.slerp(north, 0.5).resolve().vector, [np.sqrt(0.5), np.sqrt(0.5)])  # the 45° heading
+    assert np.allclose(east.slerp(north, 0.0).resolve().vector, [1, 0])  # endpoints
+    assert np.allclose(east.slerp(north, 1.0).resolve().vector, [0, 1], atol=1e-9)
+    assert np.allclose(east.slerp(north, Scalar.of(0.5)).resolve().vector, [np.sqrt(0.5), np.sqrt(0.5)])  # deferred t
+    # antipodal directions have no unique geodesic
+    decision = east.slerp(east.reversed(), 0.5).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "antipodal" in decision.reason
+
+
 def test_value_helpers() -> None:
     value = Direction2Value.of(1, 0)
     assert value.approx_equal(Direction2Value.of(2, 0))  # normalized, so equal
