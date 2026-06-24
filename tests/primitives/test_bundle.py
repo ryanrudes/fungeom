@@ -188,6 +188,31 @@ def test_scalar_bundle() -> None:
     assert isinstance(ScalarBundle.of([]).mean().decide(), Unresolvable)
 
 
+def test_scalar_bundle_min_max() -> None:
+    cloud = ScalarBundle.from_array([3.0, 1.0, 4.0, 1.5])
+    assert cloud.min().resolve() == 1.0
+    assert cloud.max().resolve() == 4.0
+    # folds over the *present* members only; empty → Unresolvable
+    assert "min of an empty bundle" in ScalarBundle.of([]).min().decide().reason
+    assert "max of an empty bundle" in ScalarBundle.of([]).max().decide().reason
+    masked = ScalarBundle.from_map({"a": Scalar.of(9.0)}, roster=["a", "b"])  # b absent
+    assert masked.min().resolve() == 9.0  # the lone present value
+
+
+def test_vec3_bundle_norm() -> None:
+    cloud = Vec3Bundle.from_array([[3, 4, 0], [0, 0, 5], [1, 0, 0]])
+    norms = cloud.norm()  # → a ScalarBundle
+    assert isinstance(norms, ScalarBundle)
+    assert [norms.at(i).resolve() for i in range(3)] == [5.0, 5.0, 1.0]
+    # the per-key broadcast preserves absent keys
+    masked = Vec3Bundle.from_map({"a": Vec3.of(3, 4, 0)}, roster=["a", "b"])
+    assert masked.norm().present("b").resolve() is False
+    # synergy: the nearest distance between two clouds is a fold of a per-key ScalarBundle
+    a = Point3Bundle.from_array([[0, 0, 0], [10, 0, 0]])
+    b = Point3Bundle.from_array([[1, 0, 0], [10, 3, 0]])
+    assert a.distance_to(b).min().resolve() == 1.0
+
+
 def test_direction3_bundle_mean_and_partiality() -> None:
     cloud = Direction3Bundle.from_array([[1, 0, 0], [0, 1, 0]])
     assert np.allclose(cloud.at(0).resolve().vector, [1, 0, 0])

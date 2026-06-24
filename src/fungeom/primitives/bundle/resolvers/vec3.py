@@ -13,6 +13,7 @@ from fungeom.primitives.bundle.decidability import BundleDecision
 from fungeom.primitives.bundle.resolvers.base import (
     Bundle,
     decide_gathered,
+    decide_mapped,
     decide_member_at,
     decide_where,
     decide_zipped,
@@ -84,6 +85,10 @@ class Vec3Bundle(Bundle[Float3]):
     def dot(self, other: Vec3Bundle) -> ScalarBundle:
         """Key-aligned dot product with ``other`` (→ ``ScalarBundle``)."""
         return _DotScalarBundle(a=self, b=other)
+
+    def norm(self) -> ScalarBundle:
+        """The key-by-key vector length (→ ``ScalarBundle``); a broadcast over the present members."""
+        return _NormScalarBundle(source=self)
 
 
 @dataclass(frozen=True, eq=False)
@@ -172,3 +177,13 @@ class _DotScalarBundle(ScalarBundle):
 
     def _decide(self) -> BundleDecision[float]:
         return decide_zipped(self.a, self.b, lambda key: self.a.at(key).dot(self.b.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _NormScalarBundle(ScalarBundle):
+    """The key-by-key norm of a vector bundle — a cross-type broadcast to scalars."""
+
+    source: Vec3Bundle
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_mapped(self.source, lambda key: self.source.at(key).norm())

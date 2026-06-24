@@ -71,6 +71,14 @@ class ScalarBundle(Bundle[float]):
         """The sum of the present values (→ ``Scalar``); ``0`` over an empty bundle."""
         return _ScalarBundleSum(bundle=self)
 
+    def min(self) -> Scalar:
+        """The smallest present value (→ ``Scalar``); Unresolvable if none are."""
+        return _ScalarBundleMin(bundle=self)
+
+    def max(self) -> Scalar:
+        """The largest present value (→ ``Scalar``); Unresolvable if none are."""
+        return _ScalarBundleMax(bundle=self)
+
     def __add__(self, other: ScalarBundle) -> ScalarBundle:
         """Key-aligned sum with ``other`` (on the intersection of present keys)."""
         return _SumScalarBundle(a=self, b=other)
@@ -140,6 +148,38 @@ class _ScalarBundleSum(Scalar):
         match self.bundle.decide():
             case Resolvable(collection):
                 return Resolvable(float(sum(collection.members[key] for key in collection.support())))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _ScalarBundleMin(Scalar):
+    bundle: ScalarBundle
+
+    def _decide(self) -> ScalarDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                present = [collection.members[key] for key in collection.support()]
+                if not present:
+                    return Unresolvable("min of an empty bundle is undefined")
+                return Resolvable(float(np.min(present)))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _ScalarBundleMax(Scalar):
+    bundle: ScalarBundle
+
+    def _decide(self) -> ScalarDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                present = [collection.members[key] for key in collection.support()]
+                if not present:
+                    return Unresolvable("max of an empty bundle is undefined")
+                return Resolvable(float(np.max(present)))
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
