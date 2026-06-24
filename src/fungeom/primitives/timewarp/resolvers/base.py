@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from fungeom.core.resolver import Resolver
+from fungeom.primitives.interval.resolvers.base import Interval
 from fungeom.primitives.timewarp.value import PiecewiseLinearWarp
 
 
@@ -62,3 +63,13 @@ class TimeWarp(Resolver[PiecewiseLinearWarp]):
         from fungeom.primitives.timewarp.resolvers.inverse import InverseTimeWarp
 
         return InverseTimeWarp(warp=self)
+
+    def domain(self) -> Interval:
+        """The closed source span ``[first knot, last knot]`` this warp is defined over.
+
+        Total; handy to check (as a graph node) that a warp covers a signal's time
+        base — a signal's :meth:`reparameterize` is Unresolvable when it does not.
+        """
+        from fungeom.primitives.timewarp.resolvers.domain import WarpDomain
+
+        return WarpDomain(warp=self)

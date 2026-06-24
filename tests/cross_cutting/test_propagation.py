@@ -304,6 +304,7 @@ CASES: dict[str, Callable[[], object]] = {
     "timemap.through.second.target": lambda: TimeMap.through((GOOD_S, GOOD_S), (GOOD_S, BAD_S)),
     # timewarp
     "timewarp.inverse": lambda: BAD_TW.inverse(),
+    "timewarp.domain": lambda: BAD_TW.domain(),
     # timeline
     "timeline.derive.parent": lambda: BAD_TL.derive("x", GOOD_TM),
     "timeline.derive.by": lambda: GOOD_TL.derive("x", BAD_TM),

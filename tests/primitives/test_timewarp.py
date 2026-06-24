@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from fungeom import TimeWarp, Unresolvable
+from fungeom import Instant, TimeWarp, Unresolvable
+from fungeom.values import IntervalValue
 
 
 def test_through_reconstructs_linearly_between_knots() -> None:
@@ -49,3 +50,11 @@ def test_target_must_be_strictly_increasing() -> None:
 def test_repr_names_knot_count_and_domain() -> None:
     w = TimeWarp.through([(0.0, 0.0), (2.0, 5.0)]).resolve()
     assert repr(w) == "PiecewiseLinearWarp(2 knots over (0.0, 2.0))"
+
+
+def test_domain_is_the_source_span() -> None:
+    w = TimeWarp.through([(0.0, 0.0), (5.0, 4.0), (10.0, 9.5)])
+    assert w.domain().resolve() == IntervalValue(0.0, 10.0)  # [first, last] source knot
+    # ...and it composes as an ordinary Interval graph node
+    assert w.domain().contains(Instant.at(7.0)).resolve() is True
+    assert w.domain().contains(Instant.at(12.0)).resolve() is False
