@@ -5,14 +5,19 @@ from __future__ import annotations
 import numpy as np
 
 from fungeom import (
+    Boundary,
     CoordinateFrame,
     Instant,
+    Interpolation,
     Interval,
+    Point3,
     Point3BundleSignal,
+    Point3Signal,
     Sampling,
+    ScalarSignal,
     Unresolvable,
 )
-from fungeom.values import IntervalValue, SampledSeries
+from fungeom.values import CoverageValue, IntervalValue, SampledSeries
 
 
 def _clip() -> Point3BundleSignal:
@@ -22,6 +27,34 @@ def _clip() -> Point3BundleSignal:
         [[[0, 0, 0], [5, 0, 0]], [[10, 0, 0], [5, 0, 0]]],
         keys=["HEAD", "LWRIST"],
     )
+
+
+def _occluded_clip() -> Point3BundleSignal:
+    # A present throughout; B occluded at frame 1; C present only at frame 0.
+    return Point3BundleSignal.from_frames(
+        [0.0, 1.0, 2.0, 3.0],
+        [
+            [[0, 0, 0], [0, 1, 0], [0, 2, 0]],
+            [[1, 0, 0], [9, 9, 9], [9, 9, 9]],
+            [[2, 0, 0], [2, 1, 0], [9, 9, 9]],
+            [[3, 0, 0], [3, 1, 0], [9, 9, 9]],
+        ],
+        keys=["A", "B", "C"],
+        present=[
+            [True, True, True],
+            [True, False, False],
+            [True, True, False],
+            [True, True, False],
+        ],
+    )
+
+
+def _agree(left: Point3, right: Point3) -> bool:
+    """Whether two Point3 resolvers agree — both Unresolvable, or equal coordinates."""
+    ld, rd = left.decide(), right.decide()
+    if isinstance(ld, Unresolvable) or isinstance(rd, Unresolvable):
+        return isinstance(ld, Unresolvable) and isinstance(rd, Unresolvable)
+    return bool(np.allclose(ld.value.coord, rd.value.coord))
 
 
 def test_construction_and_at_bridges_to_bundle_algebra() -> None:
@@ -92,3 +125,102 @@ def test_partiality() -> None:
         [0.0, 1.0], [[[0, 0, 0]], [[1, 0, 0]]], frame=CoordinateFrame.detached("loose")
     )
     assert isinstance(detached.decide(), Unresolvable)
+
+
+def test_key_projects_one_marker_trajectory() -> None:
+    # key(k) is the entity-axis slice: one marker across all time, as a real Point3Signal.
+    head = _clip().key("HEAD")
+    assert isinstance(head, Point3Signal)
+    assert head.over().resolve() == IntervalValue(0.0, 2.0)
+    assert np.allclose(head.at(0.0).resolve().coord, [0, 0, 0])
+    assert np.allclose(head.at(1.0).resolve().coord, [5, 0, 0])  # interpolated
+    assert np.allclose(head.at(2.0).resolve().coord, [10, 0, 0])
+
+
+def test_key_commuting_square_holds_on_the_support() -> None:
+    # The crux of the composition: at(t).at(k) == key(k).at(t) everywhere both are read,
+    # across exact frames, interior interpolation, entity gaps, and off-domain — for every key.
+    field = _occluded_clip()
+    times = [-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
+    for k in ("A", "B", "C"):
+        track = field.key(k)
+        for t in times:
+            assert _agree(field.at(t).at(k), track.at(t)), f"mismatch at key={k!r}, t={t}"
+
+
+def test_key_support_gaps_at_occlusions() -> None:
+    field = _occluded_clip()
+    # A is present at every frame → one unbroken span
+    assert field.key("A").support().resolve() == CoverageValue((IntervalValue(0.0, 3.0),))
+    # B drops out at frame 1 → the support splits: the exact point at t=0, then the run [2, 3]
+    b = field.key("B")
+    assert b.support().resolve() == CoverageValue((IntervalValue(0.0, 0.0), IntervalValue(2.0, 3.0)))
+    assert np.allclose(b.at(0.0).resolve().coord, [0, 1, 0])  # the isolated exact frame
+    assert isinstance(b.at(1.0).decide(), Unresolvable)  # in the entity gap
+    assert isinstance(b.at(1.5).decide(), Unresolvable)
+    assert np.allclose(b.at(2.5).resolve().coord, [2.5, 1, 0])  # interpolates inside the later span
+    # C is present only at frame 0 → a single degenerate point span
+    assert field.key("C").support().resolve() == CoverageValue((IntervalValue(0.0, 0.0),))
+
+
+def test_key_enables_the_trajectory_algebra() -> None:
+    # Because the slice is an ordinary Point3Signal, the whole signal algebra composes:
+    # the time-varying separation of two markers is a ScalarSignal. (The lift aligns on
+    # the markers' sample instants, so it is exact there — sampled at every frame here.)
+    field = Point3BundleSignal.from_frames(
+        [0.0, 1.0, 2.0],
+        [
+            [[0, 0, 0], [5, 0, 0]],
+            [[5, 0, 0], [5, 0, 0]],
+            [[10, 0, 0], [5, 0, 0]],
+        ],
+        keys=["HEAD", "LWRIST"],
+    )
+    separation = field.key("HEAD").distance_to(field.key("LWRIST"))
+    assert isinstance(separation, ScalarSignal)
+    assert separation.at(0.0).resolve() == 5.0
+    assert separation.at(1.0).resolve() == 0.0  # HEAD coincides with LWRIST at this frame
+    assert separation.at(2.0).resolve() == 5.0
+
+
+def test_key_partiality() -> None:
+    field = _clip()
+    # a key that was never declared in the cloud's roster
+    assert "not in the cloud signal's roster" in field.key("NOPE").decide().reason
+    # a fully-occluded marker has no trajectory to project
+    occ = Point3BundleSignal.from_frames([0.0, 1.0], [[[0, 0, 0]], [[1, 0, 0]]], keys=["X"], present=[[False], [False]])
+    assert "never present" in occ.key("X").decide().reason
+    # source partiality propagates (a frame/time count mismatch)
+    mismatch = Point3BundleSignal.from_frames([0.0, 1.0], [[[0, 0, 0]], [[1, 0, 0]], [[2, 0, 0]]])
+    assert isinstance(mismatch.key(0).decide(), Unresolvable)
+
+
+def test_key_support_splits_at_a_temporal_gap() -> None:
+    # A marker present at all frames, but the cloud has a TEMPORAL dropout (max_gap): the
+    # trajectory must split there too — distinct from the entity-gap path (here the present
+    # frames are adjacent in index but separated in time). And the square holds in the gap.
+    field = Point3BundleSignal.from_frames(
+        [0.0, 1.0, 5.0, 6.0],
+        [[[0, 0, 0]], [[1, 0, 0]], [[5, 0, 0]], [[6, 0, 0]]],
+        keys=["M"],
+        max_gap=2.0,
+    )
+    track = field.key("M")
+    assert track.support().resolve() == CoverageValue((IntervalValue(0.0, 1.0), IntervalValue(5.0, 6.0)))
+    # commuting square inside the temporal gap: both sides Unresolvable
+    assert isinstance(field.at(3.0).at("M").decide(), Unresolvable)
+    assert isinstance(track.at(3.0).decide(), Unresolvable)
+    assert np.allclose(track.at(5.5).resolve().coord, [5.5, 0, 0])  # interpolates inside the later span
+
+
+def test_key_refuses_non_default_reconstruction() -> None:
+    # The commuting square is proven only for linear interpolation + undefined boundary;
+    # under hold/nearest or hold/wrap the projection cannot mirror the cloud, so key()
+    # is Unresolvable (refuse rather than silently disagree) — not silently wrong.
+    frames = [[[0, 0, 0]], [[1, 0, 0]]]
+    held_kernel = Point3BundleSignal.from_frames([0.0, 1.0], frames, keys=["M"], via=Interpolation.hold)
+    held_edge = Point3BundleSignal.from_frames([0.0, 1.0], frames, keys=["M"], outside=Boundary.hold)
+    for signal in (held_kernel, held_edge):
+        decision = signal.key("M").decide()
+        assert isinstance(decision, Unresolvable)
+        assert "default reconstruction" in decision.reason

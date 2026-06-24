@@ -312,7 +312,7 @@ core < … < point3
 | --- | --- |
 | **1** | `Bundle[V]` core + `BundleValue[V]` + per-type facades; construction, `at`/`present`/`count`/`where`; first-class support — **DONE, all five facades** (`Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3` `Bundle`): generic core + shared `decide_gathered`/`decide_where`/`decide_member_at`; `of`/`from_array`/`from_map` (+ wider `roster` for absent keys), `at`→ primitive, `where`, and a fold (`centroid`/`mean`; `Direction3.mean` partial; `Transform` none — SE(3) is numerics); strict construction |
 | **2** | the algebra — `zip`-by-key (lift on the key *intersection*: `Scalar` `+ - * /`, `Vec3` `+ -`/`dot`, `Point3` `displacement_to`/`distance_to`), broadcast (`transformed_by`), folds (`sum`) — **DONE** (`decide_zipped` + `decide_mapped` helpers, mirroring signal lifting) |
-| **3** | over-time: the bundle `Blend` (elementwise lift) so `Signal[Bundle[V]]` works; the `(T, N)` occlusion mask — **`Point3BundleSignal` DONE** (`from_frames` + per-frame mask, `at(t)`→`Point3Bundle`, inherited time-ops; occlusion falls out of the key-intersection blend). Remaining: other bundle-signal types; `traverse`/`distribute` (`Bundle[Signal]` ↔ `Signal[Bundle]`) |
+| **3** | over-time: the bundle `Blend` (elementwise lift) so `Signal[Bundle[V]]` works; the `(T, N)` occlusion mask — **`Point3BundleSignal` DONE** (`from_frames` + per-frame mask, `at(t)`→`Point3Bundle`, inherited time-ops; occlusion falls out of the key-intersection blend) **+ `key(k)`→`Point3Signal` DONE** (the *distribute* column — one marker's trajectory; its support gaps at occlusions/temporal dropouts so the commuting square `at(t).at(k) == key(k).at(t)` holds **under the default reconstruction**; a present-frames projection can't mirror `hold`/`nearest`/`wrap`, so `key()` refuses those as Unresolvable). Remaining: a *fully general* `key()` (delegating reconstruction, all kernels/boundaries); other bundle-signal types; full `traverse` (`Bundle[Signal] → Signal[Bundle]`, the reassembly direction) |
 | **4** | sparse encoding for anonymous / variable-`N` clouds |
 | **R** | **reserved:** `Roster` + `RosterMap` (entity grounding + correspondence) — the retarget seam; build when pulled, not speculatively |
 
@@ -369,6 +369,10 @@ folds, and the key-aligned algebra (`zip` on the key intersection, `broadcast` m
 over time *by composition* (the V-agnostic signal core hosts a `BundleValue` via the
 bundle `Blend`), with `from_frames` + a per-frame occlusion mask, `at(t)`→`Point3Bundle`,
 and the inherited time-ops; the `(T,N)` occlusion mask falls out of `Coverage` ×
-per-frame entity mask. Remaining: other bundle-signal types, `traverse`/`distribute`,
-sparse encoding (phase 4), and the reserved `Roster`/`RosterMap` (rung 3). Each phase
-to the gate.
+per-frame entity mask. **`key(k)`→`Point3Signal`** projects one marker's trajectory (the
+*distribute* column), its support gapping at occlusions/temporal dropouts so the commuting
+square `at(t).at(k) == key(k).at(t)` holds *under the default reconstruction* (linear +
+`undefined`); it refuses `hold`/`nearest`/`wrap` (which a present-frames projection cannot
+mirror) as Unresolvable rather than disagree. Remaining: a fully-general `key()` (delegating
+reconstruction), other bundle-signal types, full `traverse` (`Bundle[Signal] → Signal[Bundle]`),
+sparse encoding (phase 4), and the reserved `Roster`/`RosterMap` (rung 3). Each phase to the gate.

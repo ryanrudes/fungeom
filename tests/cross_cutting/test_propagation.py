@@ -475,6 +475,7 @@ CASES: dict[str, Callable[[], object]] = {
     "pbsignal.from_frames.sampling": lambda: Point3BundleSignal.from_frames([1, 0], [[[0, 0, 0]], [[1, 0, 0]]]),
     "pbsignal.at.signal": lambda: BAD_PBS.at(GOOD_I),
     "pbsignal.at.instant": lambda: GOOD_PBS.at(BAD_I),
+    "pbsignal.key.source": lambda: BAD_PBS.key(0),
     "pbsignal.over": lambda: BAD_PBS.over(),
     "pbsignal.resample.source": lambda: BAD_PBS.resample(GOOD_SAMP),
     "pbsignal.resample.onto": lambda: GOOD_PBS.resample(BAD_SAMP),
