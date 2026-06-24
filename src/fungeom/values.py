@@ -26,6 +26,7 @@ from fungeom.primitives.frame2.value import CoordinateFrame2
 from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.line.value import LineValue
 from fungeom.primitives.plane.value import PlaneValue
+from fungeom.primitives.point2.value import Point2Value
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.ray.value import RayValue
 from fungeom.primitives.sampling.value import SamplingValue
@@ -49,6 +50,7 @@ __all__ = [
     "RigidTransform2",
     "CoordinateFrame",
     "CoordinateFrame2",
+    "Point2Value",
     "Point3Value",
     "PlaneValue",
     "LineValue",

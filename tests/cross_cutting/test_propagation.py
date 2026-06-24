@@ -26,6 +26,7 @@ from fungeom import (
     Direction3Bundle,
     Line,
     Plane,
+    Point2,
     Point3,
     Point3Bundle,
     Point3BundleSignal,
@@ -60,6 +61,8 @@ BAD_D, GOOD_D = Direction3.of(0, 0, 0), Direction3.of(1, 0, 0)
 BAD_D2, GOOD_D2 = Direction2.of(0, 0), Direction2.of(1, 0)
 BAD_T2, GOOD_T2 = Transform2.rotation(BAD_S), Transform2.identity()
 BAD_F2, GOOD_F2 = Frame2.detached("loose2"), Frame2.world
+BAD_P2 = Point2.at(0, 0, frame=Frame2.detached("loose2p"))
+GOOD_P2 = Point2.at(0, 0)
 BAD_F, GOOD_F = Frame.detached("loose"), Frame.world
 BAD_P = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
 GOOD_P = Point3.at(0, 0, 0)
@@ -251,6 +254,26 @@ CASES: dict[str, Callable[[], object]] = {
     "frame2.attach.transform": lambda: GOOD_F2.attach("x", BAD_T2),
     "frame2.relative.frame": lambda: BAD_F2.relative_to(GOOD_F2),
     "frame2.relative.other": lambda: GOOD_F2.relative_to(BAD_F2),
+    "pt2.in_frame.local": lambda: Point2.in_frame(BAD_V2, GOOD_F2),
+    "pt2.in_frame.frame": lambda: Point2.in_frame(GOOD_V2, BAD_F2),
+    "pt2.centroid": lambda: Point2.centroid([GOOD_P2, BAD_P2]),
+    "pt2.affine.point": lambda: Point2.affine([GOOD_P2, BAD_P2], [1, 1]),
+    "pt2.affine.weight": lambda: Point2.affine([GOOD_P2, GOOD_P2], [BAD_S, GOOD_S]),
+    "pt2.translate.point": lambda: BAD_P2.translate(GOOD_V2),
+    "pt2.translate.offset": lambda: GOOD_P2.translate(BAD_V2),
+    "pt2.lerp.a": lambda: BAD_P2.lerp(GOOD_P2, GOOD_S),
+    "pt2.lerp.b": lambda: GOOD_P2.lerp(BAD_P2, GOOD_S),
+    "pt2.lerp.t": lambda: GOOD_P2.lerp(GOOD_P2, BAD_S),
+    "pt2.midpoint": lambda: BAD_P2.midpoint(GOOD_P2),
+    "pt2.disp.a": lambda: BAD_P2.displacement_to(GOOD_P2),
+    "pt2.disp.b": lambda: GOOD_P2.displacement_to(BAD_P2),
+    "pt2.distance": lambda: BAD_P2.distance_to(GOOD_P2),
+    "pt2.direction.a": lambda: BAD_P2.direction_to(GOOD_P2),
+    "pt2.direction.b": lambda: GOOD_P2.direction_to(BAD_P2),
+    "pt2.transformed.pt": lambda: BAD_P2.transformed_by(GOOD_T2),
+    "pt2.transformed.tf": lambda: GOOD_P2.transformed_by(BAD_T2),
+    "pt2.reflect.pt": lambda: BAD_P2.reflect_across(GOOD_P2),
+    "pt2.reflect.center": lambda: GOOD_P2.reflect_across(BAD_P2),
     # point
     "pt.midpoint.a": lambda: BAD_P.midpoint(GOOD_P),
     "pt.midpoint.b": lambda: GOOD_P.midpoint(BAD_P),

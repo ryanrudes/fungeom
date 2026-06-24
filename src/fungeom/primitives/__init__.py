@@ -22,6 +22,7 @@ from fungeom.primitives.instant import Instant
 from fungeom.primitives.interval import Interval, IntervalValue
 from fungeom.primitives.line import Line, LineValue
 from fungeom.primitives.plane import Plane, PlaneValue
+from fungeom.primitives.point2 import Point2, Point2Value
 from fungeom.primitives.point3 import Point3, Point3Value
 from fungeom.primitives.ray import Ray, RayValue
 from fungeom.primitives.sampling import Sampling, SamplingValue
@@ -67,6 +68,7 @@ __all__ = [
     "Transform2",
     "Frame",
     "Frame2",
+    "Point2",
     "Point3",
     "Plane",
     "Line",
@@ -116,6 +118,7 @@ __all__ = [
     "WORLD_FRAME",
     "CoordinateFrame2",
     "WORLD_FRAME2",
+    "Point2Value",
     "Point3Value",
     "PlaneValue",
     "LineValue",

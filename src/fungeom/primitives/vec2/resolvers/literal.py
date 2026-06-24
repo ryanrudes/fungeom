@@ -24,3 +24,8 @@ class LiteralVec2(Vec2):
 
     def _decide(self) -> Vec2Decision:
         return Resolvable(self.value)
+
+
+def vec2_resolver(value: Float2) -> Vec2:
+    """Wrap a bare 2D vector value in a literal resolver."""
+    return LiteralVec2(value=value)

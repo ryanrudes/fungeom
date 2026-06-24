@@ -26,3 +26,8 @@ class NormalizedDirection2(Direction2):
         if float(np.linalg.norm(decided.value)) == 0.0:
             return Unresolvable("cannot take the direction of the zero vector")
         return Resolvable(Direction2Value(vector=decided.value))
+
+
+def as_direction2(vector: Vec2) -> Direction2:
+    """The direction of a (deferred) 2D vector."""
+    return NormalizedDirection2(vector=vector)
