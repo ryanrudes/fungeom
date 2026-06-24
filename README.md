@@ -197,6 +197,7 @@ by the test suite, so they stay current):
 | [`05_time_and_clocks.py`](examples/05_time_and_clocks.py) | the temporal layer: durations/instants, intervals & coverage with gaps, clock grounding |
 | [`06_signals_over_time.py`](examples/06_signals_over_time.py) | signals as partial functions of time; `at`/`resample`/`reparameterize`/`restrict`; slerp on a manifold |
 | [`07_aligning_and_warping.py`](examples/07_aligning_and_warping.py) | recovering the time map between two recordings from landmarks: `TimeMap.aligning`/`through`, clock grounding, monotonic `TimeWarp` |
+| [`08_point_clouds_over_time.py`](examples/08_point_clouds_over_time.py) | collections: a `Point3Bundle` (mask/fold/broadcast) and a `Point3BundleSignal` (a point cloud over time) — an occluded marker is honestly *Unresolvable*, not invented; `key(k)` is one marker's gappy trajectory |
 
 ```bash
 python examples/02_coordinate_frames.py
