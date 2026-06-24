@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 518 tests · **100 % line coverage** (enforced via
+**Current status:** 533 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -65,6 +65,7 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Sampling | ✅ | 2026-06-23 | Added `span`→`Interval` (total), `count`→`Scalar` (total), `rate`→`Scalar` (mean Hz, partial <2 samples). Deferred: `gaps`/`jitter`/`subsample`/`intersection` (niche/parked — relate to synchronize). |
 | Timeline / TimeMap | ✅ | 2026-06-23 | Added (Timeline) `to_master`→`TimeMap` (partial ungrounded) and `relative_to(other)`→`TimeMap` (partial: either ungrounded, or `other` a frozen zero-rate reference — must invert it) — mirror Frame.relative_to. **Correspondence recovery (2026-06-23):** `TimeMap.aligning(source,target)` (one landmark → offset, unit rate, total) and `TimeMap.through(first,second)` (two `(source,target)` landmarks → exact offset + rate; partial when the two sources coincide) — "compute the missing edge" from known sync points, the exact (non-numeric) half of phase 6. **Re-audited the correspondence additions (2026-06-23):** surface complete; deferred `TimeMap.apply(instant)` (≈ `Timeline.at`); N-point least-squares fit (introduces residuals → belongs with the parked numerics); `offset()`/`rate()` accessors (the name `rate` is taken by the constructor, an `offset()` method would collide with `AffineTimeMapResolver.offset` — the field/method shadowing trap — and both are trivial on the resolved `AffineTimeMap`). |
 | TimeWarp | ✅ | 2026-06-23 | **New primitive** — the monotonic, piecewise-linear content-warp (mirrors `TimeMap` but order-preserving and domain-limited; value `PiecewiseLinearWarp`). `through(knots)` (partial: <2 knots or non-monotonic source/target), `inverse` (total — strictly monotonic). Signals' `reparameterize` now accepts `TimeMap \| TimeWarp` (one `decide_warped` core helper; partial when the warp doesn't cover the whole signal — a warp invents no data past its knots). Lives at the signal tier (`signal` imports `timewarp`; never the reverse). **Audit sweep (2026-06-23):** added `domain()`→`Interval` (the source span the warp covers — total; mirrors `Sampling.span`; lets you check coverage as a graph node before reparameterizing). Deferred: `compose`/`@` (parity with `TimeMap`, but piecewise composition needs knot-resampling + a domain-overlap partiality decision that wants a real consumer); `identity` (no natural domain for a domain-limited warp); `image()`/`range()` (the target span — derivable via `reparameterize(...).over()`); `apply(instant)` (consistency with the deferred `TimeMap.apply`); non-strict (plateau) warps; what *discovers* knots from raw signals (xcorr / DTW — parked numerics). |
+| Bundle (collections) | — | (staged build) | **New layer**, design in [`docs/collections.md`](docs/collections.md). Phase 1 built (`Point3Bundle`): a keyed, maskable point cloud — `of`/`of_map` (+ wider `roster` ⇒ absent keys), `at`→`Point3`, `present`→`Bool`, `count`→`Scalar`, `where`, `centroid`→`Point3`; first-class support; world-anchored, strict construction. **Not** completeness-audited — later phases (zip-by-key, broadcast, more folds; over-time `Signal[Bundle]`; sparse encoding; `Roster`/`RosterMap`) are the staged roadmap, not gaps. |
 | Signals (core + 5 facades) | ✅ | 2026-06-23 | Added `restrict(to)` (now masks the support; accepts `Interval` *or* `Coverage`; partial: disjoint) and `shift(by)` across all five facades. **Gap-aware support (2026-06-23):** `SampledSeries` carries an explicit `support` (`CoverageValue`); a query in an interior gap is `Unresolvable` (no silent interpolation across dropouts); gaps via `max_gap=` or `restrict(Coverage)`; `support()`→`Coverage`, `defined_at`=`support().contains` (gap-honest), `over()`=hull. Added `Boundary.wrap` (periodic). **Lifting (2026-06-23):** time-aligned signal algebra via `decide_lifted` — `ScalarSignal` `+ - * /`, `Vec3Signal` `+ -`/`dot`→`ScalarSignal`, `Point3Signal` `displacement_to`→`Vec3Signal` / `distance_to`→`ScalarSignal` (align on union of instants ∩ supports; reuses the static algebra so ÷0 → `Unresolvable`; gap-honest; disjoint supports → `Unresolvable`; cross-type concretes live in the operand module, import the result facade — acyclic `point3→vec3→scalar`). Still deferred: `Signal.constant` (per-facade value parsing — esp. Point3 framing); `Boundary` `fill`/`extend`; `Interpolation.cubic` (needs N-point `Blend`). |
 
 **Cross-cutting open question — RESOLVED (2026-06-23): the `Bool` primitive is
@@ -453,6 +454,31 @@ samples through the underlying primitive at build (a custom `decide` + `gather`)
 sample-level partiality — an ungrounded frame, a zero-vector direction — surfaces as
 `Unresolvable` rather than raising; the flat signals (`Scalar`/`Vec3`/`Transform`,
 whose value types can't be partial) reuse the shared `decide_sampled` verbatim.
+
+---
+
+## Point3Bundle — value: `BundleValue[Point3Value]` (a keyed point cloud)
+
+The first **collection** — a field over a *nominal* (entity) axis, the discrete
+counterpart of a `Signal` (full design: [`docs/collections.md`](docs/collections.md)).
+A generic, `V`-agnostic core (`Bundle[V]` base + `BundleValue[V]`) carries the
+queries whose result type isn't the facade's primitive (`present`→`Bool`,
+`count`→`Scalar`, written once); `Point3Bundle` adds construction, `at`→`Point3`,
+`where`, and the `centroid`→`Point3` fold. Members are world-anchored at build
+(strict construction), so an ungrounded member makes the whole bundle Unresolvable.
+**Support is first-class:** a wider `roster` than the present members yields *absent*
+keys (an occluded marker), and folds flow over the present support while `at` an
+absent key is Unresolvable. This is phase 1 of a staged build, not a completeness
+audit — see the roadmap in the design note.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `of` / `of_map` | `_GatheredPoint3Bundle` | ✅ | ✅ | ✅ | ✅ (count mismatch / dup keys / ungrounded) | ✅ | ✅ |
+| `at` → `Point3` | `_Point3BundleAt` | ✅ | ✅ | ✅ | ✅ (absent / unknown key) | ✅ | ✅ |
+| `present` → `Bool` | `_BundlePresence` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `count` → `Scalar` | `_BundleCount` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `where` | `_WherePoint3Bundle` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `centroid` → `Point3` | `_BundleCentroid3` | ✅ | ✅ | ✅ | ✅ (empty support) | ✅ | ✅ |
 
 ---
 

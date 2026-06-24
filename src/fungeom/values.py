@@ -17,6 +17,7 @@ named ``values`` rather than ``types`` to avoid shadowing the standard library.)
 from __future__ import annotations
 
 from fungeom.core.arrays import ArrayLike, freeze
+from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.coverage.value import CoverageValue
 from fungeom.primitives.direction3.value import Direction3Value
 from fungeom.primitives.frame.value import CoordinateFrame
@@ -44,6 +45,7 @@ __all__ = [
     "CoverageValue",
     "AffineTimeMap",
     "PiecewiseLinearWarp",
+    "BundleValue",
     "Clock",
     "SamplingValue",
     "SampledSeries",

@@ -22,6 +22,7 @@ from fungeom import (
     Instant,
     Interval,
     Point3,
+    Point3Bundle,
     Point3Signal,
     RigidTransform,
     Sampling,
@@ -59,6 +60,7 @@ BAD_TL, GOOD_TL = Timeline.detached("loose"), Timeline.master
 BAD_SAMP, GOOD_SAMP = Sampling.at_times([1, 0]), Sampling.at_times([0, 1])
 BAD_SIG = ScalarSignal.from_samples([1, 0], [1, 2])
 GOOD_SIG = ScalarSignal.from_samples([0, 1, 2], [10, 20, 30])
+BAD_BUNDLE = Point3Bundle.of([BAD_P])  # a detached-frame member
 BAD_VSIG = Vec3Signal.from_samples([1, 0], [[0, 0, 0], [1, 1, 1]])
 GOOD_VSIG = Vec3Signal.from_samples([0, 1, 2], [[0, 0, 0], [1, 0, 0], [2, 0, 0]])
 BAD_DSIG = Direction3Signal.from_samples([1, 0], [[1, 0, 0], [0, 1, 0]])
@@ -412,6 +414,13 @@ CASES: dict[str, Callable[[], object]] = {
     "psignal.displacement.rhs": lambda: GOOD_PSIG.displacement_to(BAD_PSIG),
     "psignal.distance.lhs": lambda: BAD_PSIG.distance_to(GOOD_PSIG),
     "psignal.distance.rhs": lambda: GOOD_PSIG.distance_to(BAD_PSIG),
+    # point3 bundle
+    "bundle.of": lambda: Point3Bundle.of([BAD_P]),
+    "bundle.at": lambda: BAD_BUNDLE.at(0),
+    "bundle.present": lambda: BAD_BUNDLE.present(0),
+    "bundle.count": lambda: BAD_BUNDLE.count(),
+    "bundle.where": lambda: BAD_BUNDLE.where([0]),
+    "bundle.centroid": lambda: BAD_BUNDLE.centroid(),
 }
 
 

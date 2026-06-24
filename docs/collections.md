@@ -310,7 +310,7 @@ core < … < point3
 
 | Phase | Delivers |
 | --- | --- |
-| **1** | `Bundle[V]` core + `BundleValue[V]` (dense+mask) + per-type facades; construction, `at`/`keys`/`support`/`where`; first-class support |
+| **1** | `Bundle[V]` core + `BundleValue[V]` + per-type facades; construction, `at`/`present`/`count`/`where`; first-class support — **`Point3Bundle` DONE** (`of`/`of_map` with a wider `roster` for absent keys, `at`→`Point3`, `present`→`Bool`, `count`→`Scalar`, `where`, `centroid`→`Point3`; world-anchored, strict construction). Remaining: replicate to `Vec3`/`Scalar`/`Direction3`/`Transform` facades |
 | **2** | the algebra — functor lifts, `zip`-by-key, folds (`centroid`/`count`); broadcast |
 | **3** | over-time: the bundle `Blend` (elementwise lift) so `Signal[Bundle[V]]` works; `traverse`/`distribute`; the `(T, N)` occlusion mask |
 | **4** | sparse encoding for anonymous / variable-`N` clouds |
@@ -360,5 +360,7 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
 - **Build rung 2, reserve rung 3:** `Roster`/`RosterMap` are written into the
   roadmap (the retarget seam is too central to omit) but not built until pulled.
 
-**Status:** design only — nothing built yet. This note is the spine; implementation
-follows the staged roadmap above, one phase at a time, each to the gate.
+**Status:** spine + **phase 1 begun** — `Point3Bundle` is built and gated (the
+generic `Bundle[V]` core, `BundleValue[V]`, world-anchored strict construction,
+first-class maskable support, `at`/`present`/`count`/`where`/`centroid`). The rest
+follows the staged roadmap, one phase at a time, each to the gate.
