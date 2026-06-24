@@ -37,11 +37,13 @@ from fungeom.primitives.signals.series import (
     decide_resampled,
     decide_restricted,
     decide_sample,
+    decide_warped,
     support_from_times,
 )
 from fungeom.primitives.signals.vec3 import VEC3_BLEND, Vec3Signal
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
+from fungeom.primitives.timewarp.resolvers.base import TimeWarp
 from fungeom.primitives.vec3.value import Float3, as_vec3
 
 
@@ -114,8 +116,10 @@ class Point3Signal(Signal[Point3Value]):
         """This signal reconstructed onto a new time base."""
         return _ResampledPoint3Signal(source=self, onto=onto)
 
-    def reparameterize(self, by: AffineTimeMap | TimeMap) -> Point3Signal:
+    def reparameterize(self, by: AffineTimeMap | TimeMap | TimeWarp) -> Point3Signal:
         """This signal's time base affinely warped ``by`` a map (shift / scale / reverse)."""
+        if isinstance(by, TimeWarp):
+            return _ReparameterizedPoint3Signal(source=self, by=by)
         from fungeom.primitives.timemap.resolvers.literal import as_timemap_resolver
 
         return _ReparameterizedPoint3Signal(source=self, by=as_timemap_resolver(by))
@@ -183,9 +187,11 @@ class _ResampledPoint3Signal(Point3Signal):
 @dataclass(frozen=True, eq=False)
 class _ReparameterizedPoint3Signal(Point3Signal):
     source: Point3Signal
-    by: TimeMap
+    by: TimeMap | TimeWarp
 
     def _decide(self) -> Resolvability[SampledSeries[Point3Value]]:
+        if isinstance(self.by, TimeWarp):
+            return decide_warped(self.source, self.by)
         return decide_reparameterized(self.source, self.by)
 
 

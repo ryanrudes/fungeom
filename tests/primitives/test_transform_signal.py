@@ -43,6 +43,16 @@ def test_reparameterize() -> None:
     assert np.allclose(shifted.at(10.5).resolve().translation, [1.0, 0.0, 0.0])
 
 
+def test_reparameterize_by_warp() -> None:
+    from fungeom import TimeWarp
+
+    signal = TransformSignal.from_samples([0.0, 1.0], [_pose(0, [0, 0, 0]), _pose(0, [2, 0, 0])])
+    warp = TimeWarp.through([(0.0, 0.0), (0.5, 0.2), (1.0, 1.0)])  # nonlinear, covers [0, 1]
+    bent = signal.reparameterize(warp)
+    assert bent.over().resolve() == IntervalValue(0.0, 1.0)
+    assert np.allclose(bent.at(1.0).resolve().translation, [2.0, 0.0, 0.0])  # last sample carries
+
+
 def test_over_resample_and_off_domain() -> None:
     signal = TransformSignal.from_samples(
         [0.0, 1.0, 2.0], [_pose(0, [0, 0, 0]), _pose(30, [1, 0, 0]), _pose(60, [2, 0, 0])]

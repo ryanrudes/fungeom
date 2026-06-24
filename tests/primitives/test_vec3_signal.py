@@ -76,3 +76,13 @@ def test_dot_lift() -> None:
     v = Vec3Signal.from_samples([0.0, 1.0], [[0, 1, 0], [1, 0, 0]])
     assert u.dot(v).at(0.0).resolve() == 0.0
     assert u.dot(v).at(1.0).resolve() == 1.0
+
+
+def test_reparameterize_by_warp() -> None:
+    from fungeom import TimeWarp
+
+    sig = Vec3Signal.from_samples([0.0, 2.0], [[0, 0, 0], [2, 20, -2]])
+    warp = TimeWarp.through([(0.0, 0.0), (1.0, 1.5), (2.0, 2.0)])  # nonlinear, covers [0, 2]
+    bent = sig.reparameterize(warp)
+    assert bent.over().resolve() == IntervalValue(0.0, 2.0)
+    assert bent.at(2.0).resolve().tolist() == [2.0, 20.0, -2.0]

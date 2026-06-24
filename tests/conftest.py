@@ -28,6 +28,7 @@ from fungeom import (
     Scalar,
     ScalarSignal,
     TimeMap,
+    TimeWarp,
     Timeline,
     Transform,
     TransformSignal,
@@ -64,6 +65,7 @@ def bad() -> SimpleNamespace:
         interval=Interval.between(Instant.at(5), Instant.at(0)),  # end before start
         coverage=Coverage.of([Interval.between(Instant.at(5), Instant.at(0))]),  # bad member
         timemap=TimeMap.rate(0).inverse(),  # zero-rate map has no inverse
+        timewarp=TimeWarp.through([(1.0, 0.0), (0.0, 1.0)]),  # non-monotonic source knots
         timeline=Timeline.detached("loose"),  # not synced to the master clock
         sampling=Sampling.at_times([1.0, 0.0]),  # out-of-order timestamps
         scalar_signal=ScalarSignal.from_samples([1.0, 0.0], [1.0, 2.0]),  # bad sampling

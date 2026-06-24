@@ -468,7 +468,7 @@ core
 | **3** | **`Timeline` + `TimeMap`** — clocks and grounding **[DONE]** |
 | **4** | **`Sampling` + `Interpolation` + discrete `Signal`** — a generic `Signal[V]` / `SampledSeries[V]` core + `Blend` typeclass, with `Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3` signal facades **[DONE]** |
 | **5** | **`resample` + `Boundary`** — reconstruction and the resample axis **[DONE]** |
-| 6 | `reparameterize` (affine `TimeWarp`: shift / slow-mo / reverse) **[DONE]**; `synchronize` / `align_to` + nonlinear `TimeWarp` (DTW) **[PARKED — numerics kernel; needs a nonlinear `TimeWarp` *type* first]** |
+| 6 | `reparameterize` (affine, by a `TimeMap`: shift / slow-mo / reverse) **[DONE]**; **correspondence recovery — the exact, non-numeric half [DONE]:** `TimeMap.aligning`/`through` (offset / offset+rate from 1–2 landmarks) and the `TimeWarp` type + `TimeWarp.through(knots)` (monotonic N-knot warp) + `reparameterize(TimeWarp)`; only the estimators that *discover* correspondences from raw signals — `synchronize` / `align_to` (xcorr) and DTW — stay **[PARKED — numerics kernel that *produces* a `TimeMap`/`TimeWarp`; not "be numerics"]** |
 | 7 | pointwise **lifting** (time-aligned signal algebra) **[DONE: `ScalarSignal` `+ - * /`, `Vec3Signal` `+ -`/`dot`, `Point3Signal` `displacement_to`/`distance_to`]**; advanced filters, `derivative`/`integral` **[PARKED — numerics]** |
 
 Each phase follows the same definition of done as any primitive
@@ -579,9 +579,40 @@ module and imports the *result* facade — always the acyclic direction
 `Unresolvable` rather than gapped at the crossing; granular per-point gapping is a
 possible later refinement.
 
+**Correspondence recovery — the exact, non-numeric half of "sync" — BUILT
+(2026-06-23).** "Synchronizing two recordings" decomposes into two halves that the
+roadmap had lumped together and parked as one. The realization: a sync model is a
+*map between timelines* (`time_B = a·time_A + b` is literally an `AffineTimeMap`;
+drift over many landmarks is a monotonic warp), so the question splits into
+*recovering the map from known correspondences* (exact algebra — fungeom's job) and
+*discovering correspondences from raw signals* (xcorr / DTW — a numerics kernel,
+correctly parked). The first half now exists:
+- `TimeMap.aligning(source, target)` — one landmark → pure offset (unit rate); the
+  known-trigger / single-clap case. Total apart from propagation.
+- `TimeMap.through(first, second)` — two `(source, target)` landmarks → the exact
+  affine map (offset + rate/drift): clapper at the start *and* the end.
+  `Unresolvable` when the two source readings coincide (rate undetermined). Feed the
+  result to `Timeline.derive` to ground a detached recording — "compute the missing
+  edge", now an operation.
+- **`TimeWarp`** — a new primitive: the monotonic, piecewise-linear *content* warp
+  (mirrors `TimeMap`, but order-preserving and domain-limited; value
+  `PiecewiseLinearWarp`). `TimeWarp.through(knots)` is the N-landmark generalization
+  of `TimeMap.through` — exact, not a fitted line — `Unresolvable` for <2 or
+  non-monotonic knots; `inverse` is total. Signals' `reparameterize` now accepts a
+  `TimeMap | TimeWarp` (one `decide_warped` core helper), `Unresolvable` when the
+  warp doesn't cover the whole signal (a warp invents no data past its knots). It
+  lives at the signal tier (`signal` imports `timewarp`, never the reverse — the
+  same edge that keeps affine `TimeMap` below `Signal`).
+
+Deferred here on purpose: an N-point *least-squares* affine fit (introduces
+residuals — a softer, fit-shaped notion that belongs with the numerics, not the
+exact core); `TimeWarp` `identity`/`compose` (need domain-composition logic);
+non-strict (plateau) warps.
+
 **Parked (application/heavy-numerics depth — fungeom should *call* numerics, not
-*be* them):** contact-reasoning slices (retarget-specific), `align_to` /
-cross-correlation / DTW + nonlinear `TimeWarp`, filters beyond a trivial
-`median`/`smooth`, `derivative`/`integral` (type-changing into tangent spaces),
-and pointwise lifting. Each earns a *decidable signature* if/when needed, with the
-numerical kernel kept thin or delegated — not hand-rolled into the core.
+*be* them):** contact-reasoning slices (retarget-specific); the estimators that
+*discover* correspondences — `align_to` / cross-correlation (→ a `TimeMap`) and DTW
+(→ a `TimeWarp`); filters beyond a trivial `median`/`smooth`; `derivative`/
+`integral` (type-changing into tangent spaces). The warp/map *types* they would
+produce now exist, so these are pure numeric kernels with a ready, decidable return
+type — kept thin or delegated, not hand-rolled into the core.

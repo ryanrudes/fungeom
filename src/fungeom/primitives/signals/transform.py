@@ -33,9 +33,11 @@ from fungeom.primitives.signals.series import (
     decide_restricted,
     decide_sample,
     decide_sampled,
+    decide_warped,
 )
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
+from fungeom.primitives.timewarp.resolvers.base import TimeWarp
 from fungeom.primitives.transform.decidability import RigidTransformDecision
 from fungeom.primitives.transform.resolvers.base import Transform
 from fungeom.primitives.transform.value import RigidTransform
@@ -109,8 +111,10 @@ class TransformSignal(Signal[RigidTransform]):
         """This signal reconstructed onto a new time base."""
         return _ResampledTransformSignal(source=self, onto=onto)
 
-    def reparameterize(self, by: AffineTimeMap | TimeMap) -> TransformSignal:
+    def reparameterize(self, by: AffineTimeMap | TimeMap | TimeWarp) -> TransformSignal:
         """This signal's time base affinely warped ``by`` a map (shift / scale / reverse)."""
+        if isinstance(by, TimeWarp):
+            return _ReparameterizedTransformSignal(source=self, by=by)
         from fungeom.primitives.timemap.resolvers.literal import as_timemap_resolver
 
         return _ReparameterizedTransformSignal(source=self, by=as_timemap_resolver(by))
@@ -151,9 +155,11 @@ class _ResampledTransformSignal(TransformSignal):
 @dataclass(frozen=True, eq=False)
 class _ReparameterizedTransformSignal(TransformSignal):
     source: TransformSignal
-    by: TimeMap
+    by: TimeMap | TimeWarp
 
     def _decide(self) -> Resolvability[SampledSeries[RigidTransform]]:
+        if isinstance(self.by, TimeWarp):
+            return decide_warped(self.source, self.by)
         return decide_reparameterized(self.source, self.by)
 
 

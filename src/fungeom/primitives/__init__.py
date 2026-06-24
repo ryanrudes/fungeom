@@ -33,6 +33,7 @@ from fungeom.primitives.signals import (
 )
 from fungeom.primitives.timeline import MASTER_CLOCK, Clock, Timeline
 from fungeom.primitives.timemap import AffineTimeMap, TimeMap
+from fungeom.primitives.timewarp import PiecewiseLinearWarp, TimeWarp
 from fungeom.primitives.transform import Mat3, Mat4, RigidTransform, Transform
 from fungeom.primitives.vec2 import Float2, Vec2
 from fungeom.primitives.vec3 import Float3, Vec3
@@ -53,6 +54,7 @@ __all__ = [
     "Interval",
     "Coverage",
     "TimeMap",
+    "TimeWarp",
     "Timeline",
     "Sampling",
     "Interpolation",
@@ -66,6 +68,7 @@ __all__ = [
     "IntervalValue",
     "CoverageValue",
     "AffineTimeMap",
+    "PiecewiseLinearWarp",
     "Clock",
     "MASTER_CLOCK",
     "SamplingValue",

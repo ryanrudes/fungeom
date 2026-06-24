@@ -45,6 +45,7 @@ from fungeom.primitives.signals.blend import Blend
 from fungeom.primitives.signals.boundary import Boundary
 from fungeom.primitives.signals.interpolation import Interpolation
 from fungeom.primitives.timemap.resolvers.base import TimeMap
+from fungeom.primitives.timewarp.resolvers.base import TimeWarp
 
 
 def support_from_times(times: TimeSeries, max_gap: float | None) -> CoverageValue:
@@ -304,6 +305,43 @@ def decide_reparameterized[V](source: Signal[V], by: TimeMap) -> Resolvability[S
                 values = tuple(reversed(values))
             return Resolvable(
                 SampledSeries(times, values, function.interpolation, function.boundary, function.blend, support)
+            )
+        case Unresolvable() as bad, _:
+            return bad
+        case _, Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def decide_warped[V](source: Signal[V], by: TimeWarp) -> Resolvability[SampledSeries[V]]:
+    """Bend a signal's time base by a monotonic piecewise-linear warp; samples unchanged.
+
+    Each sample time is mapped forward through the warp (strictly increasing, so the
+    time base stays ordered) and the support is warped the same way, so dropouts move
+    with the data. Unresolvable when the warp is not defined over the whole signal's
+    time base — its knots must bracket every sample, because a warp invents no data
+    beyond its correspondences (unlike an affine map, which is total).
+    """
+    match source.decide(), by.decide():
+        case Resolvable(function), Resolvable(warp):
+            lo, hi = warp.domain
+            times = function.times
+            if float(times[0]) < lo or float(times[-1]) > hi:
+                return Unresolvable("the time warp is not defined over the whole signal's time base")
+            warped_times = as_times([warp.apply(float(t)) for t in times])
+            warped_support = tuple(
+                IntervalValue(start=warp.apply(span.start), end=warp.apply(span.end))
+                for span in function.support.intervals
+            )
+            return Resolvable(
+                SampledSeries(
+                    warped_times,
+                    function.values,
+                    function.interpolation,
+                    function.boundary,
+                    function.blend,
+                    CoverageValue(warped_support),
+                )
             )
         case Unresolvable() as bad, _:
             return bad

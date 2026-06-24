@@ -72,3 +72,13 @@ def test_distance_and_displacement_lift() -> None:
     assert a.distance_to(b).at(1.0).resolve() == 5.0  # midpoint (3, 4, 0)
     assert a.distance_to(b).at(2.0).resolve() == 10.0
     assert np.allclose(a.displacement_to(b).at(1.0).resolve(), [3.0, 4.0, 0.0])
+
+
+def test_reparameterize_by_warp() -> None:
+    from fungeom import TimeWarp
+
+    sig = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 0], [10, 0, 0]])
+    warp = TimeWarp.through([(0.0, 0.0), (1.0, 1.5), (2.0, 2.0)])  # nonlinear, covers [0, 2]
+    bent = sig.reparameterize(warp)
+    assert bent.over().resolve() == IntervalValue(0.0, 2.0)
+    assert np.allclose(bent.at(2.0).resolve().coord, [10.0, 0.0, 0.0])  # last sample carries

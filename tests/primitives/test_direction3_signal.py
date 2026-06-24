@@ -82,3 +82,13 @@ def test_defined_at() -> None:
     sig = Direction3Signal.from_samples([0.0, 1.0, 2.0], [[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     assert sig.defined_at(1.0).resolve() is True
     assert sig.defined_at(5.0).resolve() is False
+
+
+def test_reparameterize_by_warp() -> None:
+    from fungeom import TimeWarp
+
+    sig = Direction3Signal.from_samples([0.0, 1.0], [[1, 0, 0], [0, 1, 0]])
+    warp = TimeWarp.through([(0.0, 0.0), (0.5, 0.2), (1.0, 1.0)])  # nonlinear, covers [0, 1]
+    bent = sig.reparameterize(warp)
+    assert bent.over().resolve() == IntervalValue(0.0, 1.0)
+    assert np.allclose(bent.at(0.0).resolve().vector, [1.0, 0.0, 0.0])  # first sample carries

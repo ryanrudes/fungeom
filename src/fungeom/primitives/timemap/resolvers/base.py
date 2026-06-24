@@ -70,6 +70,43 @@ class TimeMap(Resolver[AffineTimeMap]):
 
         return AffineTimeMapResolver(offset=Duration.of(offset), rate_factor=as_scalar_resolver(rate))
 
+    @classmethod
+    def aligning(cls, source: Scalar | float, target: Scalar | float) -> TimeMap:
+        """The pure-offset map sending source-clock reading ``source`` to ``target``.
+
+        The one-landmark sync: a single correspondence (a known trigger, a clap)
+        fixes the offset but not the rate, so the recovered map runs at unit rate.
+        Recover drift as well from two landmarks with :meth:`through`.
+        """
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+        from fungeom.primitives.timemap.resolvers.aligning import AligningTimeMap
+
+        return AligningTimeMap(source=as_scalar_resolver(source), target=as_scalar_resolver(target))
+
+    @classmethod
+    def through(
+        cls,
+        first: tuple[Scalar | float, Scalar | float],
+        second: tuple[Scalar | float, Scalar | float],
+    ) -> TimeMap:
+        """The exact affine map through two correspondences ``first`` and ``second``.
+
+        Each correspondence is a ``(source, target)`` pair — the clapper at the start
+        *and* the end. Two of them determine both offset and rate (drift).
+        Unresolvable when the two source readings coincide (the rate is then
+        undetermined). This is "compute the missing edge" between two clocks; feed
+        the result to :meth:`Timeline.derive` to ground a detached recording.
+        """
+        from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
+        from fungeom.primitives.timemap.resolvers.through import ThroughTimeMap
+
+        return ThroughTimeMap(
+            source0=as_scalar_resolver(first[0]),
+            target0=as_scalar_resolver(first[1]),
+            source1=as_scalar_resolver(second[0]),
+            target1=as_scalar_resolver(second[1]),
+        )
+
     def compose(self, inner: TimeMap) -> TimeMap:
         """``self ∘ inner`` — apply ``inner`` first, then this map."""
         from fungeom.primitives.timemap.resolvers.composed import ComposedTimeMap

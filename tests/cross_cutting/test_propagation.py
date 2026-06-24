@@ -28,6 +28,7 @@ from fungeom import (
     Scalar,
     ScalarSignal,
     TimeMap,
+    TimeWarp,
     Timeline,
     Transform,
     TransformSignal,
@@ -52,6 +53,8 @@ BAD_INT = Interval.between(BAD_I, GOOD_I)
 GOOD_INT, GOOD_INT2 = Interval.between(Instant.at(0), Instant.at(10)), Interval.between(Instant.at(5), Instant.at(20))
 BAD_COV = Coverage.of([BAD_INT])
 BAD_TM, GOOD_TM = TimeMap.rate(0).inverse(), TimeMap.identity()
+BAD_TW = TimeWarp.through([(1.0, 0.0), (0.0, 1.0)])  # non-monotonic source knots
+GOOD_TW = TimeWarp.through([(0.0, 0.0), (2.0, 2.0)])
 BAD_TL, GOOD_TL = Timeline.detached("loose"), Timeline.master
 BAD_SAMP, GOOD_SAMP = Sampling.at_times([1, 0]), Sampling.at_times([0, 1])
 BAD_SIG = ScalarSignal.from_samples([1, 0], [1, 2])
@@ -293,6 +296,14 @@ CASES: dict[str, Callable[[], object]] = {
     "timemap.compose.outer": lambda: BAD_TM @ GOOD_TM,
     "timemap.compose.inner": lambda: GOOD_TM @ BAD_TM,
     "timemap.inverse": lambda: BAD_TM.inverse(),
+    "timemap.aligning.source": lambda: TimeMap.aligning(BAD_S, GOOD_S),
+    "timemap.aligning.target": lambda: TimeMap.aligning(GOOD_S, BAD_S),
+    "timemap.through.first.source": lambda: TimeMap.through((BAD_S, GOOD_S), (GOOD_S, GOOD_S)),
+    "timemap.through.first.target": lambda: TimeMap.through((GOOD_S, BAD_S), (GOOD_S, GOOD_S)),
+    "timemap.through.second.source": lambda: TimeMap.through((GOOD_S, GOOD_S), (BAD_S, GOOD_S)),
+    "timemap.through.second.target": lambda: TimeMap.through((GOOD_S, GOOD_S), (GOOD_S, BAD_S)),
+    # timewarp
+    "timewarp.inverse": lambda: BAD_TW.inverse(),
     # timeline
     "timeline.derive.parent": lambda: BAD_TL.derive("x", GOOD_TM),
     "timeline.derive.by": lambda: GOOD_TL.derive("x", BAD_TM),
@@ -315,6 +326,8 @@ CASES: dict[str, Callable[[], object]] = {
     "signal.resample.onto": lambda: GOOD_SIG.resample(BAD_SAMP),
     "signal.reparam.source": lambda: BAD_SIG.reparameterize(GOOD_TM),
     "signal.reparam.by": lambda: GOOD_SIG.reparameterize(BAD_TM),
+    "signal.reparam.warp.source": lambda: BAD_SIG.reparameterize(GOOD_TW),
+    "signal.reparam.warp.by": lambda: GOOD_SIG.reparameterize(BAD_TW),
     "signal.restrict.source": lambda: BAD_SIG.restrict(GOOD_INT),
     "signal.restrict.to": lambda: GOOD_SIG.restrict(BAD_INT),
     "signal.shift.source": lambda: BAD_SIG.shift(GOOD_DUR),

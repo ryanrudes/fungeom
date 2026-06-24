@@ -26,6 +26,7 @@ from fungeom.primitives.sampling.value import SamplingValue
 from fungeom.primitives.signals.series import SampledSeries
 from fungeom.primitives.timeline.value import Clock
 from fungeom.primitives.timemap.value import AffineTimeMap
+from fungeom.primitives.timewarp.value import PiecewiseLinearWarp
 from fungeom.primitives.transform.value import Mat3, Mat4, RigidTransform
 from fungeom.primitives.vec2.value import Float2
 from fungeom.primitives.vec3.value import Float3
@@ -42,6 +43,7 @@ __all__ = [
     "IntervalValue",
     "CoverageValue",
     "AffineTimeMap",
+    "PiecewiseLinearWarp",
     "Clock",
     "SamplingValue",
     "SampledSeries",

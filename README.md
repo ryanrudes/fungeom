@@ -9,7 +9,7 @@ value. Nothing mutates — every operation returns a new value.
 
 Each primitive is **one class** — `Bool`, `Scalar`, `Vec2`, `Vec3`, `Direction3`,
 `Transform`, `Frame`, `Point3`, and the temporal `Duration` / `Instant` /
-`Interval` / `Coverage` / `TimeMap` / `Timeline` / `Sampling`, and the `signals`
+`Interval` / `Coverage` / `TimeMap` / `TimeWarp` / `Timeline` / `Sampling`, and the `signals`
 family (`ScalarSignal` / `Vec3Signal` / `Direction3Signal` / `TransformSignal` /
 `Point3Signal`, all one generic core). You
 **construct** from it with classmethods and
@@ -137,10 +137,11 @@ particular inputs, discovered by deciding.
 | `Instant` | `at`, `epoch`, `centroid`, `affine` | `+` / `shifted_by` (by a `Duration`), `-` (`Instant`→`Duration`, `Duration`→`Instant`), `duration_to`, `lerp`, `midpoint`, `min`, `max`, `before`/`after` (→ `Bool`) | empty / zero-total-weight combos (no `Instant + Instant`) |
 | `Interval` | `between`, `of`, `point`, `around` | `start`/`end`, `duration`, `lerp`, `midpoint`, `intersection`, `hull`, `clamp`, `shifted`, `expanded`, `contains`/`overlaps` (→ `Bool`) | end before start; `intersection` of disjoint spans; `expanded` past empty |
 | `Coverage` | `of`, `empty` | `union`, `intersection`, `difference`, `total_duration`, `hull` (→ `Interval`), `gaps`, `contains` (→ `Bool`) | `hull` of empty coverage |
-| `TimeMap` | `identity`, `known`, `shift`, `rate`, `affine` | `@` (compose), `inverse` | `inverse` of a zero-rate map |
+| `TimeMap` | `identity`, `known`, `shift`, `rate`, `affine`, `aligning` (one landmark → offset), `through` (two landmarks → offset + rate) | `@` (compose), `inverse` | `inverse` of a zero-rate map; `through` two correspondences sharing a source time |
+| `TimeWarp` | `through` (monotonic correspondence knots) | `inverse` | fewer than two knots, or non-monotonic source/target knots |
 | `Timeline` | `master`, `detached`, `known` | `derive(name, by)`, `at` (→ `Instant`), `to_master` / `relative_to` (→ `TimeMap`) | detached (un-synced) timeline; `relative_to` a frozen (zero-rate) reference |
 | `Sampling` | `at_times`, `uniform` | `span` (→ `Interval`), `count` (→ `Scalar`), `rate` (→ `Scalar`, mean Hz) | empty / non-increasing timestamps; `rate` of fewer than two samples |
-| signals: `ScalarSignal` / `Vec3Signal` / `Direction3Signal` / `TransformSignal` / `Point3Signal` | `from_samples`, `sampled` (`via=Interpolation.…`, `outside=Boundary.{undefined,hold,wrap}`, `max_gap=…` to mark dropouts) | `at` (→ the matching primitive), `over` (→ `Interval`, the hull), `support` (→ `Coverage`, gap-aware), `defined_at` (→ `Bool`), `resample`, `reparameterize` (by a `TimeMap`: shift / slow-mo / reverse), `restrict` (to an `Interval` or `Coverage`), `shift` (by a `Duration`); **time-aligned lifting** — `ScalarSignal` `+ - * /`, `Vec3Signal` `+ -` / `dot` (→ `ScalarSignal`), `Point3Signal` `displacement_to` (→ `Vec3Signal`) / `distance_to` (→ `ScalarSignal`) | bad sampling / value-count mismatch (build); off-domain *or in a gap* (sample); zero-rate reparameterize; `restrict` to a disjoint window; lifting disjoint supports or where `/` crosses zero; plus slerp across antipodes (`Direction3`/`Transform`) and an ungrounded frame (`Point3`) |
+| signals: `ScalarSignal` / `Vec3Signal` / `Direction3Signal` / `TransformSignal` / `Point3Signal` | `from_samples`, `sampled` (`via=Interpolation.…`, `outside=Boundary.{undefined,hold,wrap}`, `max_gap=…` to mark dropouts) | `at` (→ the matching primitive), `over` (→ `Interval`, the hull), `support` (→ `Coverage`, gap-aware), `defined_at` (→ `Bool`), `resample`, `reparameterize` (by a `TimeMap` — shift / slow-mo / reverse — or a monotonic `TimeWarp`), `restrict` (to an `Interval` or `Coverage`), `shift` (by a `Duration`); **time-aligned lifting** — `ScalarSignal` `+ - * /`, `Vec3Signal` `+ -` / `dot` (→ `ScalarSignal`), `Point3Signal` `displacement_to` (→ `Vec3Signal`) / `distance_to` (→ `ScalarSignal`) | bad sampling / value-count mismatch (build); off-domain *or in a gap* (sample); zero-rate reparameterize or a warp not covering the whole signal; `restrict` to a disjoint window; lifting disjoint supports or where `/` crosses zero; plus slerp across antipodes (`Direction3`/`Transform`) and an ungrounded frame (`Point3`) |
 
 `Direction3` is a primitive whose *value type* enforces an invariant — a
 `Direction3.Value` is always unit length (construction normalizes, and rejects
@@ -194,6 +195,7 @@ by the test suite, so they stay current):
 | [`04_visualizing_resolvers.py`](examples/04_visualizing_resolvers.py) | rendering the lazy graph to *see* where an unresolvability lives |
 | [`05_time_and_clocks.py`](examples/05_time_and_clocks.py) | the temporal layer: durations/instants, intervals & coverage with gaps, clock grounding |
 | [`06_signals_over_time.py`](examples/06_signals_over_time.py) | signals as partial functions of time; `at`/`resample`/`reparameterize`/`restrict`; slerp on a manifold |
+| [`07_aligning_and_warping.py`](examples/07_aligning_and_warping.py) | recovering the time map between two recordings from landmarks: `TimeMap.aligning`/`through`, clock grounding, monotonic `TimeWarp` |
 
 ```bash
 python examples/02_coordinate_frames.py

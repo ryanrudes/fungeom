@@ -93,6 +93,23 @@ def test_reparameterize() -> None:
     assert not sig.reparameterize(TimeMap.rate(0.0)).is_resolvable  # zero rate collapses
 
 
+def test_reparameterize_by_warp() -> None:
+    from fungeom import TimeWarp
+
+    sig = ScalarSignal.from_samples([0.0, 1.0, 2.0], [0.0, 10.0, 20.0])
+    # A nonlinear warp bends the time base through correspondence knots; samples carry.
+    warp = TimeWarp.through([(0.0, 0.0), (1.0, 0.5), (2.0, 2.0)])
+    bent = sig.reparameterize(warp)
+    assert bent.over().resolve() == IntervalValue(0.0, 2.0)  # endpoints map 0↦0, 2↦2
+    assert bent.at(2.0).resolve() == 20.0  # sample at source 2 lands at target 2
+    assert bent.at(0.5).resolve() == 10.0  # target 0.5 is where source 1 landed
+    # A warp must be defined over the whole signal — it invents no data past its knots.
+    short = TimeWarp.through([(0.0, 0.0), (1.0, 1.0)])
+    decision = sig.reparameterize(short).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "not defined over the whole signal" in decision.reason
+
+
 def test_restrict_and_shift() -> None:
     sig = ScalarSignal.from_samples([0.0, 1.0, 2.0, 3.0], [0.0, 10.0, 20.0, 30.0])
     clipped = sig.restrict(Interval.between(Instant.at(0.5), Instant.at(2.5)))
