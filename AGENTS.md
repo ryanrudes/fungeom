@@ -8,8 +8,8 @@ procedures for adding a primitive or combinator).
 ## What this is
 
 A functional geometry API: geometry is an immutable, lazily-evaluated graph of
-**resolvers**. Each primitive — `Scalar`, `Vec2`, `Vec3`, `Direction3`,
-`Transform`, `Frame`, `Point3` — is **one class** you both construct from
+**resolvers**. Each primitive — `Bool`, `Scalar`, `Vec2`, `Vec3`, `Direction3`,
+`Transform`, `Frame`, `Point3` (plus the temporal family) — is **one class** you both construct from
 (classmethods like `Vec3.of`, `Point3.at`) and compose with (fluent methods like
 `a.midpoint(b)`). `decide()` proves whether a graph can be resolved (returning
 `Resolvable` with the value or `Unresolvable` with a reason); `resolve()` produces
@@ -51,8 +51,11 @@ wired as pre-commit hooks (coverage gate on pre-push). Install with
 - `tests/` — `core/`, `primitives/test_<name>.py`, `cross_cutting/`; shared fixtures in `tests/conftest.py`.
 
 Dependency layering is a strict **acyclic DAG**; keep it:
-`core < scalar < vec3 < direction3 < transform < frame < point3` (with `vec2`
-parallel to `vec3`).
+`core < boolean < scalar < vec3 < direction3 < transform < frame < point3` (with
+`vec2` parallel to `vec3`). `boolean` is a leaf just above `core`: the ordered and
+spanning types (`Scalar`, `Instant`, `Interval`, `Coverage`, …) resolve *into* a
+`Bool` via their comparison/predicate methods, so they import `boolean`, never the
+reverse.
 
 ## Hard rules — do not break
 
@@ -96,6 +99,15 @@ definition of done, and records progress in the
 [`CHECKLIST.md`](CHECKLIST.md) audit ledger — skipping primitives already audited
 there.
 
+To keep the runnable [`examples/`](examples/) in step with the surface (a new
+primitive or layer shipped with no example, or an outdated one), run the
+**`/refresh-examples`** task
+([`.claude/commands/refresh-examples.md`](.claude/commands/refresh-examples.md)):
+it sweeps what the examples demonstrate against the current API, updates or adds
+the scripts that genuinely earn a place to the example definition of done, keeps
+the README Examples table in sync, and confirms each still runs under
+`tests/cross_cutting/test_examples.py`.
+
 ## Gotchas (learned the hard way)
 
 - **Never name a module `types.py`** — it shadows the stdlib `types` when a script
@@ -107,3 +119,12 @@ there.
 - Value types copy their input array in `__post_init__` before `freeze`-ing, so
   constructing one never mutates the caller's array.
 - Don't add unused dependencies — only `numpy`, `scipy`, `rich` are used.
+- **A concrete resolver's dataclass field must not share a name with a facade
+  method/classmethod.** The concrete subclasses the facade, so e.g. a field
+  `start`/`end` under `Interval` (which has `start()`/`end()`), `rate` under
+  `TimeMap` (which has `rate()`), `seconds` under `Duration` (which has
+  `seconds()`), or `count` under `Sampling` (which has `count()`) fails
+  `mypy --strict` (incompatible assignment) *and* shadows the method at runtime.
+  Name the field distinctly (`start_at`, `rate_factor`, `samples`, …). Note this
+  can surface *when you add a method* to a facade whose concrete already has a
+  matching field — adding `Sampling.count()` broke `UniformSampling.count`.

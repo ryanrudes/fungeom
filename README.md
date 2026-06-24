@@ -7,8 +7,12 @@ value. Nothing mutates — every operation returns a new value.
 
 ## The shape of the API
 
-Each primitive is **one class** — `Scalar`, `Vec2`, `Vec3`, `Direction3`,
-`Transform`, `Frame`, `Point3`. You **construct** from it with classmethods and
+Each primitive is **one class** — `Bool`, `Scalar`, `Vec2`, `Vec3`, `Direction3`,
+`Transform`, `Frame`, `Point3`, and the temporal `Duration` / `Instant` /
+`Interval` / `Coverage` / `TimeMap` / `Timeline` / `Sampling`, and the `signals`
+family (`ScalarSignal` / `Vec3Signal` / `Direction3Signal` / `TransformSignal` /
+`Point3Signal`, all one generic core). You
+**construct** from it with classmethods and
 **compose** with fluent methods; both return a resolver of that primitive.
 Calling `resolve()` produces the concrete value, whose type is `<Primitive>.Value`.
 
@@ -122,12 +126,21 @@ particular inputs, discovered by deciding.
 
 | Primitive | Construct | Compose | Partial cases (`Unresolvable`) |
 | --- | --- | --- | --- |
-| `Scalar` | `of` | `+ - * / **`, `min`, `max`, `abs`, `sqrt`, `clamp`, `sign`, `floor`, `ceil`, `round`, `mod` | `/0`, `sqrt(<0)`, `(-x)**½`, `0**-1`, `clamp` with `low > high`, `mod 0` |
+| `Bool` | `of`, `true`, `false` | `and_` (`&`), `or_` (`|`), `not_` (`~`) | — (total; strict propagation, not Kleene) |
+| `Scalar` | `of` | `+ - * / **`, `min`, `max`, `abs`, `sqrt`, `clamp`, `sign`, `floor`, `ceil`, `round`, `mod`, `lt`/`le`/`gt`/`ge` (→ `Bool`) | `/0`, `sqrt(<0)`, `(-x)**½`, `0**-1`, `clamp` with `low > high`, `mod 0` |
 | `Vec2` / `Vec3` | `of` | `+ -`, `scale`, `norm`, `normalized`, `dot`, `cross`, `lerp`, `project_onto`, `reject_from`, `x`/`y`/`z`, `angle_to`, `with_norm`, `perpendicular` (2D) | `normalize(0⃗)`, project/reject onto `0⃗`, `angle_to`/`with_norm` of `0⃗` |
 | `Direction3` | `of`, `towards` | `reversed`, `angle_to`, `slerp`, `as_vector`, `dot`, `cross` | direction of `0⃗`; `slerp` of antipodes; `cross` of parallels |
 | `Transform` | `identity`, `known`, `translation`, `rotation` | `@` (compose), `inverse`, `slerp`, `transform_vector`, `transform_direction`, `translation_part`, `rotation_part` | `rotation` about the zero axis |
 | `Frame` | `world`, `detached`, `known` | `attach(name, transform)`, `relative_to` | detached (ungrounded) frame |
 | `Point3` | `at`, `in_frame`, `centroid`, `affine` | `translate`, `lerp`, `midpoint`, `displacement_to`, `distance_to`, `direction_to`, `transformed_by`, `reflect_across` | empty / zero-total-weight combos; coincident points; ungrounded frame |
+| `Duration` | `of`, `seconds`, `milliseconds`, `minutes`, `zero` | `+ -`, `*` / `scale`, `/` (by scalar), unary `-`, `abs`, `ratio` (→ `Scalar`), `min`, `max`, `clamp`, `lt`/`le`/`gt`/`ge` (→ `Bool`) | `ratio` by a zero duration; `clamp` with `low > high` |
+| `Instant` | `at`, `epoch`, `centroid`, `affine` | `+` / `shifted_by` (by a `Duration`), `-` (`Instant`→`Duration`, `Duration`→`Instant`), `duration_to`, `lerp`, `midpoint`, `min`, `max`, `before`/`after` (→ `Bool`) | empty / zero-total-weight combos (no `Instant + Instant`) |
+| `Interval` | `between`, `of`, `point`, `around` | `start`/`end`, `duration`, `lerp`, `midpoint`, `intersection`, `hull`, `clamp`, `shifted`, `expanded`, `contains`/`overlaps` (→ `Bool`) | end before start; `intersection` of disjoint spans; `expanded` past empty |
+| `Coverage` | `of`, `empty` | `union`, `intersection`, `difference`, `total_duration`, `hull` (→ `Interval`), `gaps`, `contains` (→ `Bool`) | `hull` of empty coverage |
+| `TimeMap` | `identity`, `known`, `shift`, `rate`, `affine` | `@` (compose), `inverse` | `inverse` of a zero-rate map |
+| `Timeline` | `master`, `detached`, `known` | `derive(name, by)`, `at` (→ `Instant`), `to_master` / `relative_to` (→ `TimeMap`) | detached (un-synced) timeline; `relative_to` a frozen (zero-rate) reference |
+| `Sampling` | `at_times`, `uniform` | `span` (→ `Interval`), `count` (→ `Scalar`), `rate` (→ `Scalar`, mean Hz) | empty / non-increasing timestamps; `rate` of fewer than two samples |
+| signals: `ScalarSignal` / `Vec3Signal` / `Direction3Signal` / `TransformSignal` / `Point3Signal` | `from_samples`, `sampled` (`via=Interpolation.…`, `outside=Boundary.{undefined,hold,wrap}`, `max_gap=…` to mark dropouts) | `at` (→ the matching primitive), `over` (→ `Interval`, the hull), `support` (→ `Coverage`, gap-aware), `defined_at` (→ `Bool`), `resample`, `reparameterize` (by a `TimeMap`: shift / slow-mo / reverse), `restrict` (to an `Interval` or `Coverage`), `shift` (by a `Duration`); **time-aligned lifting** — `ScalarSignal` `+ - * /`, `Vec3Signal` `+ -` / `dot` (→ `ScalarSignal`), `Point3Signal` `displacement_to` (→ `Vec3Signal`) / `distance_to` (→ `ScalarSignal`) | bad sampling / value-count mismatch (build); off-domain *or in a gap* (sample); zero-rate reparameterize; `restrict` to a disjoint window; lifting disjoint supports or where `/` crosses zero; plus slerp across antipodes (`Direction3`/`Transform`) and an ungrounded frame (`Point3`) |
 
 `Direction3` is a primitive whose *value type* enforces an invariant — a
 `Direction3.Value` is always unit length (construction normalizes, and rejects
@@ -177,8 +190,10 @@ by the test suite, so they stay current):
 | --- | --- |
 | [`01_quickstart.py`](examples/01_quickstart.py) | construct → compose → resolve; scalars flowing across types |
 | [`02_coordinate_frames.py`](examples/02_coordinate_frames.py) | a kinematic chain; grounding, and why an unplaced frame is `Unresolvable` |
-| [`03_decidability_and_partiality.py`](examples/03_decidability_and_partiality.py) | value-dependent partialities, reasons, and propagation |
+| [`03_decidability_and_partiality.py`](examples/03_decidability_and_partiality.py) | value-dependent partialities, reasons, propagation; predicates as decidable `Bool`s |
 | [`04_visualizing_resolvers.py`](examples/04_visualizing_resolvers.py) | rendering the lazy graph to *see* where an unresolvability lives |
+| [`05_time_and_clocks.py`](examples/05_time_and_clocks.py) | the temporal layer: durations/instants, intervals & coverage with gaps, clock grounding |
+| [`06_signals_over_time.py`](examples/06_signals_over_time.py) | signals as partial functions of time; `at`/`resample`/`reparameterize`/`restrict`; slerp on a manifold |
 
 ```bash
 python examples/02_coordinate_frames.py
@@ -197,7 +212,7 @@ the public API.
 | `core.resolver` | The `Resolver[T]` interface (`decide` primitive; `resolve`/`is_resolvable`/`children` derived) |
 | `core.resolvability` | `Resolvable` / `Unresolvable` evidence, `gather`, `UnresolvableError` |
 | `core.arrays` | Generic numpy helpers (`freeze`, `ArrayLike`) — no geometry |
-| `primitives.<name>` | One per primitive: `scalar`, `vec2`, `vec3`, `direction3`, `transform`, `frame`, `point3` |
+| `primitives.<name>` | One per primitive: `boolean`, `scalar`, `vec2`, `vec3`, `direction3`, `transform`, `frame`, `point3` (+ the temporal family) |
 | `values` | Re-exports the resolved value types (`Point3Value`, `Float3`, `RigidTransform`, …) |
 | `viz` | `resolver_tree` / `render_tree` — visualize the lazy graph |
 

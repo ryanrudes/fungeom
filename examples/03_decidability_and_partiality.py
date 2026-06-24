@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fungeom import Point3, Resolvable, Resolver, Scalar, Vec3
+from fungeom import Bool, Point3, Resolvable, Resolver, Scalar, Vec3
 
 
 def report(label: str, resolver: Resolver[Any]) -> None:
@@ -56,6 +56,17 @@ def main() -> None:
     report("the offending scalar itself", bad)
     report("a vector using it", Vec3.of(bad, 0, 0))
     report("a point using that vector", Point3.at(bad, 0, 0))
+
+    print("\nPredicates are decidable truth values, too (a comparison can be Unresolvable):")
+    # A comparison does not return a Python bool — it returns a deferred `Bool`,
+    # because, like any resolver, it might have no answer.
+    report("2 < 3", Scalar.of(2).lt(3))
+    report("2 < 1", Scalar.of(2).lt(1))
+    report("(unanswerable scalar) < 1", bad.lt(Scalar.of(1)))  # inherits bad's unresolvability
+    # Logical algebra propagates *strictly* — there is no Kleene short-circuit, so
+    # even `False and <unanswerable>` stays Unresolvable rather than collapsing to False.
+    report("False and (bad < 1)", Bool.false.and_(bad.lt(Scalar.of(1))))
+    report("(2 < 3) and (3 < 4)", Scalar.of(2).lt(3).and_(Scalar.of(3).lt(4)))
 
     print("\nRequiring proof in code — you can demand a *resolved* value:")
     decision = Point3.centroid([a, b]).decide()
