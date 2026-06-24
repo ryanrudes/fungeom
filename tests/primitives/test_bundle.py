@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import numpy as np
 
-from fungeom import CoordinateFrame, Point3, Point3Bundle, Unresolvable
+from fungeom import (
+    CoordinateFrame,
+    Direction3,
+    Direction3Bundle,
+    Point3,
+    Point3Bundle,
+    Scalar,
+    ScalarBundle,
+    Transform,
+    TransformBundle,
+    Unresolvable,
+    Vec3,
+    Vec3Bundle,
+)
 from fungeom.values import BundleValue
 
 
@@ -92,7 +105,7 @@ def test_construction_is_strict_on_a_detached_member() -> None:
 
 def test_malformed_construction() -> None:
     p = Point3.at(0, 0, 0)
-    assert "2 points for 1 keys" in Point3Bundle.of([p, p], keys=["a"]).decide().reason
+    assert "2 members for 1 keys" in Point3Bundle.of([p, p], keys=["a"]).decide().reason
     assert "duplicate keys" in Point3Bundle.of([p, p], keys=["a", "a"]).decide().reason
 
 
@@ -100,3 +113,51 @@ def test_empty_fold_is_unresolvable() -> None:
     decision = Point3Bundle.of([]).centroid().decide()
     assert isinstance(decision, Unresolvable)
     assert "empty bundle" in decision.reason
+
+
+def test_vec3_bundle() -> None:
+    cloud = Vec3Bundle.from_array([[1, 0, 0], [3, 0, 0]])
+    assert np.allclose(cloud.at(1).resolve(), [3, 0, 0])
+    assert np.allclose(cloud.mean().resolve(), [2, 0, 0])  # total
+    assert cloud.count().resolve() == 2.0
+    # keyed + masking works on every facade (shared core)
+    masked = Vec3Bundle.from_map({"x": Vec3.of(1, 0, 0)}, roster=["x", "y"])
+    assert masked.present("y").resolve() is False
+    assert "absent" in masked.at("y").decide().reason
+    assert np.allclose(masked.where(["x"]).mean().resolve(), [1, 0, 0])
+    assert isinstance(Vec3Bundle.of([]).mean().decide(), Unresolvable)  # empty fold
+
+
+def test_scalar_bundle() -> None:
+    cloud = ScalarBundle.from_array([1.0, 2.0, 6.0])
+    assert cloud.at(2).resolve() == 6.0
+    assert cloud.mean().resolve() == 3.0
+    keyed = ScalarBundle.from_map({"a": Scalar.of(10.0), "b": Scalar.of(20.0)})
+    assert keyed.mean().resolve() == 15.0
+    assert isinstance(ScalarBundle.of([]).mean().decide(), Unresolvable)
+
+
+def test_direction3_bundle_mean_and_partiality() -> None:
+    cloud = Direction3Bundle.from_array([[1, 0, 0], [0, 1, 0]])
+    assert np.allclose(cloud.at(0).resolve().vector, [1, 0, 0])
+    assert np.allclose(cloud.mean().resolve().vector, [2**-0.5, 2**-0.5, 0])  # normalize the sum
+    # a zero-vector member makes the whole bundle Unresolvable (strict build)
+    assert isinstance(Direction3Bundle.from_array([[0, 0, 0]]).decide(), Unresolvable)
+    # antipodal directions cancel: their mean has no direction
+    cancel = Direction3Bundle.from_array([[1, 0, 0], [-1, 0, 0]]).mean().decide()
+    assert isinstance(cancel, Unresolvable)
+    assert "cancel" in cancel.reason
+    assert isinstance(Direction3Bundle.of([]).mean().decide(), Unresolvable)  # empty fold
+    keyed = Direction3Bundle.from_map({"x": Direction3.of(1, 0, 0)}, roster=["x", "y"])
+    assert keyed.present("y").resolve() is False
+
+
+def test_transform_bundle() -> None:
+    cloud = TransformBundle.of([Transform.identity(), Transform.identity()], keys=["a", "b"])
+    assert cloud.count().resolve() == 2.0
+    assert np.allclose(cloud.at("a").resolve().translation, [0, 0, 0])
+    assert cloud.where(["a"]).count().resolve() == 1.0
+    assert "not in the bundle's roster" in cloud.where(["a"]).at("b").decide().reason  # b dropped
+    keyed = TransformBundle.from_map({"a": Transform.identity()}, roster=["a", "b"])
+    assert keyed.present("b").resolve() is False
+    assert "absent" in keyed.at("b").decide().reason  # b in roster but masked

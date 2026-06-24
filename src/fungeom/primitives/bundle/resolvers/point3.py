@@ -18,7 +18,7 @@ import numpy as np
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
-from fungeom.primitives.bundle.resolvers.base import Bundle
+from fungeom.primitives.bundle.resolvers.base import Bundle, decide_gathered, decide_member_at, decide_where
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
@@ -33,10 +33,10 @@ class Point3Bundle(Bundle[Point3Value]):
     Construct with :meth:`of` (a list of points), :meth:`from_array` (a raw ``(N, 3)``
     coordinate array in a shared frame), or :meth:`from_map` (a mapping, optionally
     over a larger ``roster`` so the missing keys read as *absent* — an occluded
-    marker set). Query with
-    :meth:`at` (→ a rich ``Point3``), :meth:`present` / :meth:`count` (from the base),
-    :meth:`where` (restrict to a subset), and fold with :meth:`centroid`.
-    ``resolve()`` yields a ``BundleValue[Point3Value]`` of world-anchored positions.
+    marker set). Query with :meth:`at` (→ a rich ``Point3``), :meth:`present` /
+    :meth:`count` (from the base), :meth:`where` (restrict to a subset), and fold with
+    :meth:`centroid`. ``resolve()`` yields a ``BundleValue[Point3Value]`` of
+    world-anchored positions.
 
     Partiality has three layers: the bundle fails to *build* if any member is
     unresolvable (a detached frame) or the keys are malformed; a key may be *absent*
@@ -53,9 +53,9 @@ class Point3Bundle(Bundle[Point3Value]):
         Every point is present. Unresolvable to build if ``keys`` is given with a
         different length, if keys are duplicated, or if any point is.
         """
-        pts = tuple(points)
-        member_keys = tuple(keys) if keys is not None else tuple(range(len(pts)))
-        return _GatheredPoint3Bundle(member_keys=member_keys, points=pts, roster=member_keys)
+        members = tuple(points)
+        member_keys = tuple(keys) if keys is not None else tuple(range(len(members)))
+        return _GatheredPoint3Bundle(member_keys=member_keys, members=members, roster=member_keys)
 
     @classmethod
     def from_array(
@@ -85,9 +85,9 @@ class Point3Bundle(Bundle[Point3Value]):
         (the occluded-marker case): they are in the roster but off the support.
         """
         member_keys = tuple(members)
-        pts = tuple(members[key] for key in member_keys)
+        points = tuple(members[key] for key in member_keys)
         full = tuple(dict.fromkeys([*roster, *member_keys])) if roster is not None else member_keys
-        return _GatheredPoint3Bundle(member_keys=member_keys, points=pts, roster=full)
+        return _GatheredPoint3Bundle(member_keys=member_keys, members=points, roster=full)
 
     def at(self, key: Hashable) -> Point3:
         """The position for ``key`` (→ ``Point3``); Unresolvable if absent or unknown."""
@@ -107,21 +107,11 @@ class _GatheredPoint3Bundle(Point3Bundle):
     """Grounds each point member (the frame partiality) before building the collection."""
 
     member_keys: tuple[Hashable, ...]
-    points: tuple[Point3, ...]
+    members: tuple[Point3, ...]
     roster: tuple[Hashable, ...]
 
     def _decide(self) -> BundleDecision[Point3Value]:
-        if len(self.member_keys) != len(self.points):
-            return Unresolvable(f"{len(self.points)} points for {len(self.member_keys)} keys")
-        if len(set(self.member_keys)) != len(self.member_keys):
-            return Unresolvable("duplicate keys in the bundle")
-        members: dict[Hashable, Point3Value] = {}
-        for key, point in zip(self.member_keys, self.points):
-            decided = point.decide()
-            if isinstance(decided, Unresolvable):
-                return decided
-            members[key] = decided.value
-        return Resolvable(BundleValue(roster=self.roster, members=members))
+        return decide_gathered(self.member_keys, self.members, self.roster)
 
 
 @dataclass(frozen=True, eq=False)
@@ -132,15 +122,7 @@ class _WherePoint3Bundle(Point3Bundle):
     keep: tuple[Hashable, ...]
 
     def _decide(self) -> BundleDecision[Point3Value]:
-        match self.source.decide():
-            case Resolvable(collection):
-                keep = set(self.keep)
-                roster = tuple(key for key in collection.roster if key in keep)
-                members = {key: value for key, value in collection.members.items() if key in keep}
-                return Resolvable(BundleValue(roster=roster, members=members))
-            case Unresolvable() as bad:
-                return bad
-        raise AssertionError("unreachable")  # pragma: no cover
+        return decide_where(self.source, self.keep)
 
 
 @dataclass(frozen=True, eq=False)
@@ -151,16 +133,7 @@ class _Point3BundleAt(Point3):
     key: Hashable
 
     def _decide(self) -> Point3Decision:
-        match self.bundle.decide():
-            case Resolvable(collection):
-                if self.key not in collection.roster:
-                    return Unresolvable(f"key {self.key!r} is not in the bundle's roster")
-                if not collection.present(self.key):
-                    return Unresolvable(f"key {self.key!r} is absent from the bundle")
-                return Resolvable(collection.at(self.key))
-            case Unresolvable() as bad:
-                return bad
-        raise AssertionError("unreachable")  # pragma: no cover
+        return decide_member_at(self.bundle, self.key)
 
 
 @dataclass(frozen=True, eq=False)

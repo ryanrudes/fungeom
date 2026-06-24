@@ -21,9 +21,13 @@ from fungeom import (
     Frame,
     Instant,
     Interval,
+    Direction3Bundle,
     Point3,
     Point3Bundle,
     Point3Signal,
+    ScalarBundle,
+    TransformBundle,
+    Vec3Bundle,
     RigidTransform,
     Sampling,
     Scalar,
@@ -61,6 +65,10 @@ BAD_SAMP, GOOD_SAMP = Sampling.at_times([1, 0]), Sampling.at_times([0, 1])
 BAD_SIG = ScalarSignal.from_samples([1, 0], [1, 2])
 GOOD_SIG = ScalarSignal.from_samples([0, 1, 2], [10, 20, 30])
 BAD_BUNDLE = Point3Bundle.of([BAD_P])  # a detached-frame member
+BAD_VB = Vec3Bundle.of([BAD_V3])
+BAD_SB = ScalarBundle.of([BAD_S])
+BAD_DB = Direction3Bundle.of([BAD_D])
+BAD_TB = TransformBundle.of([BAD_T])
 BAD_VSIG = Vec3Signal.from_samples([1, 0], [[0, 0, 0], [1, 1, 1]])
 GOOD_VSIG = Vec3Signal.from_samples([0, 1, 2], [[0, 0, 0], [1, 0, 0], [2, 0, 0]])
 BAD_DSIG = Direction3Signal.from_samples([1, 0], [[1, 0, 0], [0, 1, 0]])
@@ -421,6 +429,22 @@ CASES: dict[str, Callable[[], object]] = {
     "bundle.count": lambda: BAD_BUNDLE.count(),
     "bundle.where": lambda: BAD_BUNDLE.where([0]),
     "bundle.centroid": lambda: BAD_BUNDLE.centroid(),
+    # other bundle facades
+    "vbundle.of": lambda: Vec3Bundle.of([BAD_V3]),
+    "vbundle.at": lambda: BAD_VB.at(0),
+    "vbundle.where": lambda: BAD_VB.where([0]),
+    "vbundle.mean": lambda: BAD_VB.mean(),
+    "sbundle.of": lambda: ScalarBundle.of([BAD_S]),
+    "sbundle.at": lambda: BAD_SB.at(0),
+    "sbundle.where": lambda: BAD_SB.where([0]),
+    "sbundle.mean": lambda: BAD_SB.mean(),
+    "dbundle.of": lambda: Direction3Bundle.of([BAD_D]),
+    "dbundle.at": lambda: BAD_DB.at(0),
+    "dbundle.where": lambda: BAD_DB.where([0]),
+    "dbundle.mean": lambda: BAD_DB.mean(),
+    "tbundle.of": lambda: TransformBundle.of([BAD_T]),
+    "tbundle.at": lambda: BAD_TB.at(0),
+    "tbundle.where": lambda: BAD_TB.where([0]),
 }
 
 

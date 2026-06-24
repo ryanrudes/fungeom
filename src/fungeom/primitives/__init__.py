@@ -32,7 +32,15 @@ from fungeom.primitives.signals import (
     Vec3Signal,
 )
 from fungeom.primitives.timeline import MASTER_CLOCK, Clock, Timeline
-from fungeom.primitives.bundle import Bundle, BundleValue, Point3Bundle
+from fungeom.primitives.bundle import (
+    Bundle,
+    BundleValue,
+    Direction3Bundle,
+    Point3Bundle,
+    ScalarBundle,
+    TransformBundle,
+    Vec3Bundle,
+)
 from fungeom.primitives.timemap import AffineTimeMap, TimeMap
 from fungeom.primitives.timewarp import PiecewiseLinearWarp, TimeWarp
 from fungeom.primitives.transform import Mat3, Mat4, RigidTransform, Transform
@@ -59,6 +67,10 @@ __all__ = [
     "Timeline",
     "Sampling",
     "Bundle",
+    "ScalarBundle",
+    "Vec3Bundle",
+    "Direction3Bundle",
+    "TransformBundle",
     "Point3Bundle",
     "Interpolation",
     "Boundary",
