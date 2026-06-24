@@ -17,9 +17,15 @@ named ``values`` rather than ``types`` to avoid shadowing the standard library.)
 from __future__ import annotations
 
 from fungeom.core.arrays import ArrayLike, freeze
+from fungeom.primitives.coverage.value import CoverageValue
 from fungeom.primitives.direction3.value import Direction3Value
 from fungeom.primitives.frame.value import CoordinateFrame
+from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.sampling.value import SamplingValue
+from fungeom.primitives.signals.series import SampledSeries
+from fungeom.primitives.timeline.value import Clock
+from fungeom.primitives.timemap.value import AffineTimeMap
 from fungeom.primitives.transform.value import Mat3, Mat4, RigidTransform
 from fungeom.primitives.vec2.value import Float2
 from fungeom.primitives.vec3.value import Float3
@@ -33,6 +39,12 @@ __all__ = [
     "CoordinateFrame",
     "Point3Value",
     "Direction3Value",
+    "IntervalValue",
+    "CoverageValue",
+    "AffineTimeMap",
+    "Clock",
+    "SamplingValue",
+    "SampledSeries",
     "ArrayLike",
     "freeze",
 ]
