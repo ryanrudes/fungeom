@@ -17,6 +17,7 @@ from fungeom.primitives.signals.interpolation import Interpolation
 from fungeom.primitives.signals.point3 import Point3Signal
 from fungeom.primitives.signals.scalar import ScalarSignal
 from fungeom.primitives.signals.series import SampledSeries, Signal
+from fungeom.primitives.signals.bundle import Point3BundleSignal
 from fungeom.primitives.signals.transform import TransformSignal
 from fungeom.primitives.signals.vec3 import Vec3Signal
 
@@ -31,4 +32,5 @@ __all__ = [
     "Direction3Signal",
     "TransformSignal",
     "Point3Signal",
+    "Point3BundleSignal",
 ]

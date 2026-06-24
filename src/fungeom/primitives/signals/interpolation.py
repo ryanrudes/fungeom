@@ -52,6 +52,8 @@ class _Linear(Interpolation):
         if t >= times[-1]:
             return Resolvable(values[-1])
         hi = int(np.searchsorted(times, t))
+        if times[hi] == t:
+            return Resolvable(values[hi])  # an exact sample is that sample, never routed through the blend
         lo = hi - 1
         frac = float((t - times[lo]) / (times[hi] - times[lo]))
         return blend.between(values[lo], values[hi], frac)

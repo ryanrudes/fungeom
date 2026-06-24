@@ -24,6 +24,7 @@ from fungeom import (
     Direction3Bundle,
     Point3,
     Point3Bundle,
+    Point3BundleSignal,
     Point3Signal,
     ScalarBundle,
     TransformBundle,
@@ -65,6 +66,8 @@ BAD_SAMP, GOOD_SAMP = Sampling.at_times([1, 0]), Sampling.at_times([0, 1])
 BAD_SIG = ScalarSignal.from_samples([1, 0], [1, 2])
 GOOD_SIG = ScalarSignal.from_samples([0, 1, 2], [10, 20, 30])
 BAD_BUNDLE, GOOD_PB = Point3Bundle.of([BAD_P]), Point3Bundle.of([GOOD_P])
+BAD_PBS = Point3BundleSignal.from_frames([1, 0], [[[0, 0, 0]], [[1, 0, 0]]])  # out-of-order sampling
+GOOD_PBS = Point3BundleSignal.from_frames([0, 1], [[[0, 0, 0]], [[1, 0, 0]]])
 BAD_VB, GOOD_VB = Vec3Bundle.of([BAD_V3]), Vec3Bundle.of([GOOD_V3])
 BAD_SB, GOOD_SB = ScalarBundle.of([BAD_S]), ScalarBundle.of([GOOD_S])
 BAD_DB = Direction3Bundle.of([BAD_D])
@@ -468,6 +471,20 @@ CASES: dict[str, Callable[[], object]] = {
     "pbundle.distance.rhs": lambda: GOOD_PB.distance_to(BAD_BUNDLE),
     "pbundle.transformed_by.source": lambda: BAD_BUNDLE.transformed_by(GOOD_T),
     "pbundle.transformed_by.transform": lambda: GOOD_PB.transformed_by(BAD_T),
+    # point3 bundle signal (collection over time)
+    "pbsignal.from_frames.sampling": lambda: Point3BundleSignal.from_frames([1, 0], [[[0, 0, 0]], [[1, 0, 0]]]),
+    "pbsignal.at.signal": lambda: BAD_PBS.at(GOOD_I),
+    "pbsignal.at.instant": lambda: GOOD_PBS.at(BAD_I),
+    "pbsignal.over": lambda: BAD_PBS.over(),
+    "pbsignal.resample.source": lambda: BAD_PBS.resample(GOOD_SAMP),
+    "pbsignal.resample.onto": lambda: GOOD_PBS.resample(BAD_SAMP),
+    "pbsignal.reparam.source": lambda: BAD_PBS.reparameterize(GOOD_TM),
+    "pbsignal.reparam.by": lambda: GOOD_PBS.reparameterize(BAD_TM),
+    "pbsignal.reparam.warp": lambda: GOOD_PBS.reparameterize(BAD_TW),
+    "pbsignal.restrict.source": lambda: BAD_PBS.restrict(GOOD_INT),
+    "pbsignal.restrict.to": lambda: GOOD_PBS.restrict(BAD_INT),
+    "pbsignal.shift.source": lambda: BAD_PBS.shift(GOOD_DUR),
+    "pbsignal.shift.by": lambda: GOOD_PBS.shift(BAD_DUR),
 }
 
 
