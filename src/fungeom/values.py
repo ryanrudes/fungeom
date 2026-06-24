@@ -22,6 +22,7 @@ from fungeom.primitives.coverage.value import CoverageValue
 from fungeom.primitives.direction2.value import Direction2Value
 from fungeom.primitives.direction3.value import Direction3Value
 from fungeom.primitives.frame.value import CoordinateFrame
+from fungeom.primitives.frame2.value import CoordinateFrame2
 from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.line.value import LineValue
 from fungeom.primitives.plane.value import PlaneValue
@@ -47,6 +48,7 @@ __all__ = [
     "RigidTransform",
     "RigidTransform2",
     "CoordinateFrame",
+    "CoordinateFrame2",
     "Point3Value",
     "PlaneValue",
     "LineValue",

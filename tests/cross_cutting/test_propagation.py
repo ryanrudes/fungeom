@@ -20,6 +20,7 @@ from fungeom import (
     Direction3Signal,
     Duration,
     Frame,
+    Frame2,
     Instant,
     Interval,
     Direction3Bundle,
@@ -58,6 +59,7 @@ BAD_T, GOOD_T = Transform.rotation(Vec3.of(0, 0, 0), Scalar.of(1)), Transform.id
 BAD_D, GOOD_D = Direction3.of(0, 0, 0), Direction3.of(1, 0, 0)
 BAD_D2, GOOD_D2 = Direction2.of(0, 0), Direction2.of(1, 0)
 BAD_T2, GOOD_T2 = Transform2.rotation(BAD_S), Transform2.identity()
+BAD_F2, GOOD_F2 = Frame2.detached("loose2"), Frame2.world
 BAD_F, GOOD_F = Frame.detached("loose"), Frame.world
 BAD_P = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
 GOOD_P = Point3.at(0, 0, 0)
@@ -245,6 +247,10 @@ CASES: dict[str, Callable[[], object]] = {
     "frame.attach.transform": lambda: GOOD_F.attach("x", BAD_T),
     "frame.relative.frame": lambda: BAD_F.relative_to(GOOD_F),
     "frame.relative.other": lambda: GOOD_F.relative_to(BAD_F),
+    "frame2.attach.parent": lambda: BAD_F2.attach("x", GOOD_T2),
+    "frame2.attach.transform": lambda: GOOD_F2.attach("x", BAD_T2),
+    "frame2.relative.frame": lambda: BAD_F2.relative_to(GOOD_F2),
+    "frame2.relative.other": lambda: GOOD_F2.relative_to(BAD_F2),
     # point
     "pt.midpoint.a": lambda: BAD_P.midpoint(GOOD_P),
     "pt.midpoint.b": lambda: GOOD_P.midpoint(BAD_P),

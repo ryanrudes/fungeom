@@ -17,6 +17,7 @@ from fungeom.primitives.direction2 import Direction2, Direction2Value
 from fungeom.primitives.direction3 import Direction3, Direction3Value
 from fungeom.primitives.duration import Duration
 from fungeom.primitives.frame import WORLD_FRAME, CoordinateFrame, Frame
+from fungeom.primitives.frame2 import WORLD_FRAME2, CoordinateFrame2, Frame2
 from fungeom.primitives.instant import Instant
 from fungeom.primitives.interval import Interval, IntervalValue
 from fungeom.primitives.line import Line, LineValue
@@ -65,6 +66,7 @@ __all__ = [
     "Transform",
     "Transform2",
     "Frame",
+    "Frame2",
     "Point3",
     "Plane",
     "Line",
@@ -112,6 +114,8 @@ __all__ = [
     "RigidTransform2",
     "CoordinateFrame",
     "WORLD_FRAME",
+    "CoordinateFrame2",
+    "WORLD_FRAME2",
     "Point3Value",
     "PlaneValue",
     "LineValue",

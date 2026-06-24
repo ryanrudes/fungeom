@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 748 tests · **100 % line coverage** (enforced via
+**Current status:** 758 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -62,6 +62,7 @@ ticked only once the audit has been fully run on it *and* the gate is green.
 | Line | — | (newly built 2026-06-24) | **New primitive** (the tangent/axis vocabulary, sibling to `Plane`). Built directly with its intended surface (`through`/`through_points`; `direction`/`origin`/`project`/`distance_to`/`contains`/`direction_along`) + the `Point3Bundle.fit_line` numeric fit. **Completeness-audit pending** — not yet swept for missing combinators (e.g. an `angle_to`/`intersection`/`closest_approach` between two lines, a `point_at(t)`). |
 | Ray | — | (newly built 2026-06-24) | **New primitive** (the half-line; completes Line/Ray/Segment). `through`/`from_to`; `origin`/`direction`/`project`/`distance_to`/`contains`/`point_at`/`reversed` — `project`/`distance_to` clamp behind the origin, `point_at` partial for a negative distance. **Completeness-audit pending** (e.g. `intersect` a plane → `Point3`, `to_line`). |
 | Direction2 | — | (newly built 2026-06-24) | **New primitive** — the first member of the **2D geometry stack** (mirrors `Direction3`). `of`/`towards`/`from_angle`; `reversed`/`perpendicular`/`angle`/`angle_to`/`dot`/`as_vector`. **Completeness-audit pending** (e.g. `slerp`/`rotate(angle)`, a signed `angle_to`). |
+| Frame2 | — | (newly built 2026-06-24) | **New primitive** — the 2D frame tree (mirrors `Frame`; rooted at `WORLD_FRAME2`, edges are `RigidTransform2`). `world`/`detached`/`known`/`attach`/`relative_to`→`Transform2`. Resolving is partial for an ungrounded frame. **Completeness-audit pending**. |
 | Transform2 | — | (newly built 2026-06-24) | **New primitive** — SE(2), the 2D rigid-motion member of the stack (mirrors `Transform`; a rotation is a single angle, so `rotation` is total). `identity`/`known`/`translation`/`rotation`; `@`/`inverse`/`transform_vector`/`transform_direction`/`translation_part`/`rotation_part`/`angle`. Note the `RotationTransform2.radians` field (avoids shadowing `Transform2.angle()` — the field/method trap). **Completeness-audit pending** (e.g. `slerp`, `from_point_pairs`). |
 | Segment | — | (newly built 2026-06-24) | **New primitive** (the finite segment / bone). `between`; `start`/`end`/`direction`/`length`/`midpoint`/`project`/`distance_to`/`contains`/`at`/`parameter_of`/`reversed` — clamps to the endpoints; `direction` partial when degenerate, `at` partial outside `[0,1]`. **Completeness-audit pending** (e.g. `to_line`/`to_ray`, `closest_approach` between two segments). |
 | Duration | ✅ | 2026-06-23 | Added `min`, `max` (total), `clamp(low,high)` (partial low>high), and order comparisons `lt`/`le`/`gt`/`ge` → `Bool` (signed order; reuse the generic `LessThan`/`LessEqual`) — mirror Scalar. Deferred: `between` (≡ `Instant.duration_to`), `sign`/`hz` (niche). |
@@ -252,6 +253,19 @@ Resolving is partial when the frame is not grounded to the world.
 | `world` / `detached` / `known` | `KnownFrame` | ✅ | ✅ | ✅ | ✅ (ungrounded) | — | ✅ |
 | `attach` | `AttachedFrame` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
 | `relative_to` | `FrameTransform` → `Transform` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
+
+## Frame2 — value: `CoordinateFrame2`
+
+The 2D sibling of `Frame` (the planar-frame member of the **2D geometry stack**) — a
+tree of frames rooted at `WORLD_FRAME2`, each holding a `RigidTransform2` to its parent.
+**Constructors:** `Frame2.world` (attr), `Frame2.detached(name)`, `Frame2.known(value)`.
+Resolving is partial when the frame is not grounded to the world.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `world` / `detached` / `known` | `KnownFrame2` | ✅ | ✅ | ✅ | ✅ (ungrounded) | — | ✅ |
+| `attach` | `AttachedFrame2` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
+| `relative_to` | `Frame2Transform` → `Transform2` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
 
 ## Point3 — value: `Point3Value` (a framed position)
 
