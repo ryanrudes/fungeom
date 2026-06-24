@@ -22,6 +22,7 @@ from fungeom import (
     Instant,
     Interval,
     Direction3Bundle,
+    Plane,
     Point3,
     Point3Bundle,
     Point3BundleSignal,
@@ -53,6 +54,8 @@ BAD_D, GOOD_D = Direction3.of(0, 0, 0), Direction3.of(1, 0, 0)
 BAD_F, GOOD_F = Frame.detached("loose"), Frame.world
 BAD_P = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
 GOOD_P = Point3.at(0, 0, 0)
+BAD_PLANE = Plane.through(BAD_P, GOOD_D)
+GOOD_PLANE = Plane.through(GOOD_P, GOOD_D)
 BAD_DUR, GOOD_DUR = Duration.of(1).scale(BAD_S), Duration.of(2)
 BAD_I, GOOD_I = Instant.epoch.shifted_by(BAD_DUR), Instant.at(0)
 BAD_INT = Interval.between(BAD_I, GOOD_I)
@@ -201,6 +204,7 @@ CASES: dict[str, Callable[[], object]] = {
     "dir.dot.rhs": lambda: GOOD_D.dot(BAD_D),
     "dir.cross.lhs": lambda: BAD_D.cross(GOOD_D),
     "dir.cross.rhs": lambda: GOOD_D.cross(BAD_D),
+    "dir.any_perpendicular": lambda: BAD_D.any_perpendicular(),
     # frame
     "frame.attach.parent": lambda: BAD_F.attach("x", GOOD_T),
     "frame.attach.transform": lambda: GOOD_F.attach("x", BAD_T),
@@ -223,6 +227,33 @@ CASES: dict[str, Callable[[], object]] = {
     "pt.transformed.tf": lambda: GOOD_P.transformed_by(BAD_T),
     "pt.reflect.pt": lambda: BAD_P.reflect_across(GOOD_P),
     "pt.reflect.center": lambda: GOOD_P.reflect_across(BAD_P),
+    # plane
+    "plane.through.anchor": lambda: Plane.through(BAD_P, GOOD_D),
+    "plane.through.axis": lambda: Plane.through(GOOD_P, BAD_D),
+    "plane.through_points.a": lambda: Plane.through_points(BAD_P, GOOD_P, GOOD_P),
+    "plane.through_points.b": lambda: Plane.through_points(GOOD_P, BAD_P, GOOD_P),
+    "plane.through_points.c": lambda: Plane.through_points(GOOD_P, GOOD_P, BAD_P),
+    "plane.spanned_by.anchor": lambda: Plane.spanned_by(BAD_P, GOOD_V3, GOOD_V3),
+    "plane.spanned_by.u": lambda: Plane.spanned_by(GOOD_P, BAD_V3, GOOD_V3),
+    "plane.spanned_by.v": lambda: Plane.spanned_by(GOOD_P, GOOD_V3, BAD_V3),
+    "plane.normal": lambda: BAD_PLANE.normal(),
+    "plane.origin": lambda: BAD_PLANE.origin(),
+    "plane.project.plane": lambda: BAD_PLANE.project(GOOD_P),
+    "plane.project.point": lambda: GOOD_PLANE.project(BAD_P),
+    "plane.signed_distance.plane": lambda: BAD_PLANE.signed_distance(GOOD_P),
+    "plane.signed_distance.point": lambda: GOOD_PLANE.signed_distance(BAD_P),
+    "plane.distance_to": lambda: BAD_PLANE.distance_to(GOOD_P),
+    "plane.contains": lambda: BAD_PLANE.contains(GOOD_P),
+    "plane.facing.plane": lambda: BAD_PLANE.facing(GOOD_P),
+    "plane.facing.point": lambda: GOOD_PLANE.facing(BAD_P),
+    "plane.flipped": lambda: BAD_PLANE.flipped(),
+    "plane.offset.plane": lambda: BAD_PLANE.offset(GOOD_S),
+    "plane.offset.distance": lambda: GOOD_PLANE.offset(BAD_S),
+    "plane.project_direction.plane": lambda: BAD_PLANE.project_direction(GOOD_D),
+    "plane.project_direction.direction": lambda: GOOD_PLANE.project_direction(BAD_D),
+    "plane.frame.plane": lambda: BAD_PLANE.frame(GOOD_P, GOOD_D),
+    "plane.frame.origin": lambda: GOOD_PLANE.frame(BAD_P, GOOD_D),
+    "plane.frame.tangent": lambda: GOOD_PLANE.frame(GOOD_P, BAD_D),
     # duration
     "duration.sum.lhs": lambda: BAD_DUR + GOOD_DUR,
     "duration.sum.rhs": lambda: GOOD_DUR + BAD_DUR,

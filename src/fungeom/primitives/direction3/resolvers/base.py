@@ -90,3 +90,9 @@ class Direction3(Resolver[Direction3Value]):
         from fungeom.primitives.direction3.resolvers.cross import CrossDirection3
 
         return CrossDirection3(a=self, b=other)
+
+    def any_perpendicular(self) -> Direction3:
+        """Some unit direction perpendicular to this one (arbitrary but deterministic; total)."""
+        from fungeom.primitives.direction3.resolvers.any_perpendicular import AnyPerpendicular
+
+        return AnyPerpendicular(direction=self)

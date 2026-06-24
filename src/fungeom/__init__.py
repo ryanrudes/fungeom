@@ -39,6 +39,8 @@ from fungeom.primitives import (
     IntervalValue,
     Mat3,
     Mat4,
+    Plane,
+    PlaneValue,
     Point3,
     Point3Signal,
     RigidTransform,
@@ -77,6 +79,7 @@ __all__ = [
     "Transform",
     "Frame",
     "Point3",
+    "Plane",
     # temporal
     "Duration",
     "Instant",
@@ -102,6 +105,7 @@ __all__ = [
     "Point3Signal",
     # commonly-used value types
     "RigidTransform",
+    "PlaneValue",
     "CoordinateFrame",
     "WORLD_FRAME",
     "IntervalValue",

@@ -18,6 +18,7 @@ from fungeom.primitives.duration import Duration
 from fungeom.primitives.frame import WORLD_FRAME, CoordinateFrame, Frame
 from fungeom.primitives.instant import Instant
 from fungeom.primitives.interval import Interval, IntervalValue
+from fungeom.primitives.plane import Plane, PlaneValue
 from fungeom.primitives.point3 import Point3, Point3Value
 from fungeom.primitives.sampling import Sampling, SamplingValue
 from fungeom.primitives.scalar import Scalar
@@ -58,6 +59,7 @@ __all__ = [
     "Transform",
     "Frame",
     "Point3",
+    "Plane",
     # temporal
     "Duration",
     "Instant",
@@ -99,5 +101,6 @@ __all__ = [
     "CoordinateFrame",
     "WORLD_FRAME",
     "Point3Value",
+    "PlaneValue",
     "Direction3Value",
 ]

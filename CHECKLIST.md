@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 606 tests · **100 % line coverage** (enforced via
+**Current status:** 643 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
@@ -226,6 +226,34 @@ Resolving world-anchors; partial when the frame is ungrounded.
 | `direction_to` | (composed) → `Direction3` | ✅ | ✅ | ✅ | ✅ (coincident) | ✅ | ✅ |
 | `transformed_by` | `TransformedPoint3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `reflect_across` | `ReflectedPoint3` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+
+---
+
+## Plane — value: `PlaneValue` (an oriented plane: world point + unit normal)
+
+Surface geometry — the home for the *patch*-definition vocabulary (a contact surface
+frame, built various ways). Above `point3`/`direction3` in the layering; resolving is
+world-frame. Pure algebra (no numerics — the N-marker least-squares fit will live on
+`Bundle.fit_plane`, a later slice). Its combinators directly back the surface-frame
+resolvers a downstream app needs: `facing` (resolve a fitted normal's sign from a
+reference point), `offset` (contact-surface offset), `project`/`project_direction`
+(marker projection, reference tangent), `frame` (assemble the canonical right-handed
+surface frame). **`Direction3.any_perpendicular`** (the don't-care tangent) ships with it.
+
+| Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `through` | `PlaneThrough` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `through_points` | `PlaneThroughPoints` | ✅ | ✅ | ✅ | ✅ (collinear) | ✅ | ✅ |
+| `spanned_by` | `PlaneSpannedBy` | ✅ | ✅ | ✅ | ✅ (parallel) | ✅ | ✅ |
+| `normal` / `origin` | `PlaneNormal` / `PlaneOrigin` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `project` → `Point3` | `PlaneProject` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `signed_distance` → `Scalar` | `PlaneSignedDistance` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `distance_to` / `contains` | (composed) → `Scalar`/`Bool` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `facing` | `PlaneFacing` | ✅ | ✅ | ✅ | ✅ (point on plane) | ✅ | ✅ |
+| `flipped` | `PlaneFlipped` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `offset` | `PlaneOffset` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| `project_direction` → `Direction3` | `PlaneProjectDirection` | ✅ | ✅ | ✅ | ✅ (normal-parallel) | ✅ | ✅ |
+| `frame` → `Transform` | `PlaneFrame` | ✅ | ✅ | ✅ | ✅ (tangent ∥ normal) | ✅ | ✅ |
 
 ---
 

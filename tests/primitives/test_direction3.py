@@ -58,3 +58,11 @@ def test_value_enforces_unit_length_eagerly() -> None:
     assert not d.approx_equal(Direction3Value.of(0, 2, 0))
     assert d.angle_to(Direction3Value.of(0, 0, 1)) == pytest.approx(0.0)
     assert "Direction3Value" in repr(d)
+
+
+def test_any_perpendicular() -> None:
+    for components in ([0, 0, 1], [1, 0, 0], [1, 2, 3]):
+        d = Direction3.of(*components)
+        perp = d.any_perpendicular().resolve()
+        assert np.isclose(np.linalg.norm(perp.vector), 1.0)  # a unit direction...
+        assert np.isclose(float(np.dot(perp.vector, d.resolve().vector)), 0.0)  # ...perpendicular to d
