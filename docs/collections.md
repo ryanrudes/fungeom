@@ -310,7 +310,7 @@ core < … < point3
 
 | Phase | Delivers |
 | --- | --- |
-| **1** | `Bundle[V]` core + `BundleValue[V]` + per-type facades; construction, `at`/`present`/`count`/`where`; first-class support — **`Point3Bundle` DONE** (`of`/`of_map` with a wider `roster` for absent keys, `at`→`Point3`, `present`→`Bool`, `count`→`Scalar`, `where`, `centroid`→`Point3`; world-anchored, strict construction). Remaining: replicate to `Vec3`/`Scalar`/`Direction3`/`Transform` facades |
+| **1** | `Bundle[V]` core + `BundleValue[V]` + per-type facades; construction, `at`/`present`/`count`/`where`; first-class support — **`Point3Bundle` DONE** (`of`/`from_array`/`from_map` with a wider `roster` for absent keys, `at`→`Point3`, `present`→`Bool`, `count`→`Scalar`, `where`, `centroid`→`Point3`; world-anchored, strict construction). Remaining: replicate to `Vec3`/`Scalar`/`Direction3`/`Transform` facades |
 | **2** | the algebra — functor lifts, `zip`-by-key, folds (`centroid`/`count`); broadcast |
 | **3** | over-time: the bundle `Blend` (elementwise lift) so `Signal[Bundle[V]]` works; `traverse`/`distribute`; the `(T, N)` occlusion mask |
 | **4** | sparse encoding for anonymous / variable-`N` clouds |

@@ -21,8 +21,17 @@ def test_positional_construction_and_at() -> None:
     assert cloud.count().resolve() == 3.0
 
 
+def test_from_array_construction() -> None:
+    cloud = Point3Bundle.from_array([[0, 0, 0], [4, 0, 0], [0, 3, 0]])
+    assert cloud.count().resolve() == 3.0
+    assert np.allclose(cloud.at(1).resolve().coord, [4, 0, 0])
+    assert np.allclose(cloud.centroid().resolve().coord, [4 / 3, 1, 0])
+    keyed = Point3Bundle.from_array([[1, 0, 0], [0, 2, 0]], keys=["a", "b"])
+    assert np.allclose(keyed.at("a").resolve().coord, [1, 0, 0])
+
+
 def test_keyed_construction() -> None:
-    cloud = Point3Bundle.of_map({"a": Point3.at(1, 0, 0), "b": Point3.at(0, 2, 0)})
+    cloud = Point3Bundle.from_map({"a": Point3.at(1, 0, 0), "b": Point3.at(0, 2, 0)})
     assert np.allclose(cloud.at("a").resolve().coord, [1, 0, 0])
     assert cloud.present("a").resolve() is True
     assert cloud.resolve().support() == ("a", "b")
@@ -30,7 +39,7 @@ def test_keyed_construction() -> None:
 
 def test_masking_via_a_wider_roster() -> None:
     # An occluded-marker frame: RWRIST is in the roster but absent this frame.
-    cloud = Point3Bundle.of_map(
+    cloud = Point3Bundle.from_map(
         {"HEAD": Point3.at(0, 0, 10), "LWRIST": Point3.at(-2, 0, 0)},
         roster=["HEAD", "LWRIST", "RWRIST"],
     )
@@ -48,7 +57,7 @@ def test_masking_via_a_wider_roster() -> None:
 
 def test_centroid_folds_over_present_members() -> None:
     # masked centroid uses only the present members
-    cloud = Point3Bundle.of_map(
+    cloud = Point3Bundle.from_map(
         {"a": Point3.at(0, 0, 0), "b": Point3.at(2, 0, 0)},
         roster=["a", "b", "c"],
     )
@@ -57,7 +66,7 @@ def test_centroid_folds_over_present_members() -> None:
 
 
 def test_where_narrows_roster_and_support() -> None:
-    cloud = Point3Bundle.of_map(
+    cloud = Point3Bundle.from_map(
         {"HEAD": Point3.at(0, 0, 10), "LWRIST": Point3.at(-2, 0, 0)},
         roster=["HEAD", "LWRIST", "RWRIST"],
     )

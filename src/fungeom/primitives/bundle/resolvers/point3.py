@@ -15,11 +15,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
 from fungeom.primitives.bundle.resolvers.base import Bundle
 from fungeom.primitives.bundle.value import BundleValue
-from fungeom.primitives.frame.value import WORLD_FRAME
+from fungeom.primitives.frame.resolvers.base import Frame
+from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
@@ -28,9 +30,10 @@ from fungeom.primitives.point3.value import Point3Value
 class Point3Bundle(Bundle[Point3Value]):
     """A deferred point cloud — a keyed, possibly-masked collection of positions.
 
-    Construct with :meth:`of` (a list of points, keyed by position or by explicit
-    keys) or :meth:`of_map` (a mapping, optionally over a larger ``roster`` so the
-    missing keys read as *absent* — an occluded marker set). Query with
+    Construct with :meth:`of` (a list of points), :meth:`from_array` (a raw ``(N, 3)``
+    coordinate array in a shared frame), or :meth:`from_map` (a mapping, optionally
+    over a larger ``roster`` so the missing keys read as *absent* — an occluded
+    marker set). Query with
     :meth:`at` (→ a rich ``Point3``), :meth:`present` / :meth:`count` (from the base),
     :meth:`where` (restrict to a subset), and fold with :meth:`centroid`.
     ``resolve()`` yields a ``BundleValue[Point3Value]`` of world-anchored positions.
@@ -55,7 +58,23 @@ class Point3Bundle(Bundle[Point3Value]):
         return _GatheredPoint3Bundle(member_keys=member_keys, points=pts, roster=member_keys)
 
     @classmethod
-    def of_map(
+    def from_array(
+        cls,
+        coords: ArrayLike,
+        keys: Sequence[Hashable] | None = None,
+        frame: CoordinateFrame | Frame = WORLD_FRAME,
+    ) -> Point3Bundle:
+        """A cloud from a raw ``(N, 3)`` coordinate array, all points in ``frame``.
+
+        The natural input for a dense point cloud. Keyed by ``keys`` or by position
+        ``0..N-1``; every point is present (use :meth:`from_map` for an occluded set).
+        """
+        rows = np.asarray(coords, dtype=float).reshape(-1, 3)
+        points = tuple(Point3.at(float(x), float(y), float(z), frame=frame) for x, y, z in rows)
+        return cls.of(points, keys=keys)
+
+    @classmethod
+    def from_map(
         cls,
         members: Mapping[Hashable, Point3],
         roster: Sequence[Hashable] | None = None,
