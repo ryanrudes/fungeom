@@ -9,8 +9,9 @@ flat signals, differing only in its blend; the manifold's partiality flows throu
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -29,10 +30,13 @@ from fungeom.primitives.signals.interpolation import Interpolation
 from fungeom.primitives.signals.series import (
     SampledSeries,
     Signal,
+    decide_lifted,
+    decide_lifted_n,
     decide_reparameterized,
     decide_resampled,
     decide_restricted,
     decide_sample,
+    resolved_rows,
     decide_warped,
     support_from_times,
 )
@@ -40,6 +44,9 @@ from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
 from fungeom.primitives.timewarp.resolvers.base import TimeWarp
 from fungeom.primitives.vec3.value import as_vec3
+
+if TYPE_CHECKING:
+    from fungeom.primitives.signals.transform import TransformSignal
 
 _PARALLEL = 1.0 - 1e-9
 
@@ -133,6 +140,56 @@ class Direction3Signal(Signal[Direction3Value]):
     def shift(self, by: Duration | float) -> Direction3Signal:
         """This signal translated in time by ``by`` (sugar for ``reparameterize(TimeMap.shift(by))``)."""
         return self.reparameterize(TimeMap.shift(by))
+
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        """Resample onto ``onto`` and resolve to a raw ``(T, 3) array`` — the vectorized readback.
+
+        The sanctioned exit into numpy; resolves eagerly (raises ``UnresolvableError`` if a
+        target is off the support).
+        """
+        return resolved_rows(self.resample(onto), lambda value: value.vector)
+
+    @classmethod
+    def lift(cls, sources: Sequence[Signal[Any]], combine: Callable[..., Direction3]) -> Direction3Signal:
+        """Build a direction signal by combining ``sources`` per instant (the general escape hatch)."""
+        return _LiftedDirection3Signal(sources=tuple(sources), combine=combine)
+
+    def map(self, transform: Callable[[Direction3], Direction3]) -> Direction3Signal:
+        """Apply ``transform`` to this direction at each instant (→ ``Direction3Signal``; the unary lift)."""
+        return _LiftedDirection3Signal(sources=(self,), combine=transform)
+
+    def rotated_by(self, pose: TransformSignal) -> Direction3Signal:
+        """This direction rotated by a moving ``pose`` over time (→ ``Direction3Signal``).
+
+        The transport lift for a direction — the pose's rotation is applied (translation is
+        meaningless for a direction); time-aligned ∩ supports, off the pose's support →
+        ``Unresolvable``.
+        """
+        return _RotatedDirection3Signal(a=self, pose=pose)
+
+
+@dataclass(frozen=True, eq=False)
+class _RotatedDirection3Signal(Direction3Signal):
+    """A direction rotated by a moving pose over time — the transport lift."""
+
+    a: Direction3Signal
+    pose: TransformSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[Direction3Value]]:
+        return decide_lifted(
+            self.a, self.pose, lambda t: self.pose.at(t).transform_direction(self.a.at(t)), DIRECTION3_BLEND
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class _LiftedDirection3Signal(Direction3Signal):
+    """A direction signal built by combining N sources per instant — the general lift / map."""
+
+    sources: tuple[Signal[Any], ...]
+    combine: Callable[..., Direction3]
+
+    def _decide(self) -> Resolvability[SampledSeries[Direction3Value]]:
+        return decide_lifted_n(self.sources, lambda t: self.combine(*(s.at(t) for s in self.sources)), DIRECTION3_BLEND)
 
 
 @dataclass(frozen=True, eq=False)

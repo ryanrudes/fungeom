@@ -20,6 +20,7 @@ from fungeom.primitives.bundle.resolvers.base import (
     decide_zipped,
 )
 from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
+from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.vec3.decidability import Vec3Decision
@@ -64,9 +65,9 @@ class Vec3Bundle(Bundle[Float3]):
         """The vector for ``key`` (→ ``Vec3``); Unresolvable if absent or unknown."""
         return _Vec3BundleAt(bundle=self, key=key)
 
-    def where(self, keys: Sequence[Hashable]) -> Vec3Bundle:
+    def where(self, keys: Sequence[Hashable] | Roster) -> Vec3Bundle:
         """The sub-bundle restricted to ``keys``."""
-        return _WhereVec3Bundle(source=self, keep=tuple(keys))
+        return _WhereVec3Bundle(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
 
     def relabel(self, mapping: RosterMap) -> Vec3Bundle:
         """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
@@ -110,7 +111,7 @@ class _GatheredVec3Bundle(Vec3Bundle):
 @dataclass(frozen=True, eq=False)
 class _WhereVec3Bundle(Vec3Bundle):
     source: Vec3Bundle
-    keep: tuple[Hashable, ...]
+    keep: tuple[Hashable, ...] | Roster
 
     def _decide(self) -> BundleDecision[Float3]:
         return decide_where(self.source, self.keep)

@@ -81,3 +81,27 @@ def test_defined_at() -> None:
     )
     assert sig.defined_at(1.0).resolve() is True
     assert sig.defined_at(5.0).resolve() is False
+
+
+def test_angular_velocity_and_speed() -> None:
+    # a constant spin about +z: 30° per second → ω ≈ (0, 0, π/6) rad/s
+    spin = TransformSignal.from_samples(
+        [0.0, 1.0, 2.0],
+        [_pose(0, [0, 0, 0]), _pose(30, [0, 0, 0]), _pose(60, [0, 0, 0])],
+    )
+    omega = spin.angular_velocity().at(1.0).resolve()
+    assert np.allclose(omega, [0, 0, np.pi / 6], atol=1e-9)
+    assert np.isclose(spin.angular_speed().at(1.0).resolve(), np.pi / 6)
+    assert isinstance(
+        TransformSignal.from_samples([0.0], [_pose(0, [0, 0, 0])]).angular_velocity().decide(), Unresolvable
+    )
+
+
+def test_map_and_lift() -> None:
+    from fungeom import Transform
+
+    spin = TransformSignal.from_samples([0.0, 2.0], [_pose(0, [1, 0, 0]), _pose(0, [3, 0, 0])])
+    inv = spin.map(lambda x: x.inverse())  # invert each pose
+    assert np.allclose(inv.at(0.0).resolve().translation, [-1, 0, 0])
+    composed = TransformSignal.lift([spin], lambda x: x.compose(Transform.translation((0, 10, 0))))
+    assert np.allclose(composed.at(0.0).resolve().translation, [1, 10, 0])

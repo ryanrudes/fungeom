@@ -31,11 +31,14 @@ from fungeom.primitives.point2.value import Point2Value
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.ray.value import RayValue
 from fungeom.primitives.ray2.value import Ray2Value
+from fungeom.primitives.face.value import FaceValue
+from fungeom.primitives.region2.value import Region2Value
 from fungeom.primitives.roster.value import RosterValue
 from fungeom.primitives.rostermap.value import KeyCorrespondence
 from fungeom.primitives.sampling.value import SamplingValue
 from fungeom.primitives.segment.value import SegmentValue
 from fungeom.primitives.segment2.value import Segment2Value
+from fungeom.primitives.signals.boolean import BoolSeries
 from fungeom.primitives.signals.series import SampledSeries
 from fungeom.primitives.timeline.value import Clock
 from fungeom.primitives.timemap.value import AffineTimeMap
@@ -57,6 +60,8 @@ __all__ = [
     "CoordinateFrame2",
     "Point2Value",
     "Point3Value",
+    "Region2Value",
+    "FaceValue",
     "PlaneValue",
     "LineValue",
     "Line2Value",
@@ -75,6 +80,7 @@ __all__ = [
     "KeyCorrespondence",
     "Clock",
     "SamplingValue",
+    "BoolSeries",
     "SampledSeries",
     "ArrayLike",
     "freeze",

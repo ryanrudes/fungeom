@@ -76,6 +76,12 @@ class Vec3(Resolver[Float3]):
 
         return CrossVec3(a=self, b=other)
 
+    def scalar_triple(self, b: Vec3, c: Vec3) -> Scalar:
+        """``self · (b × c)`` — the signed volume of the parallelepiped (a winding sign; → ``Scalar``)."""
+        from fungeom.primitives.vec3.resolvers.scalar_triple import Vec3ScalarTriple
+
+        return Vec3ScalarTriple(a=self, b=b, c=c)
+
     def project_onto(self, other: Vec3) -> Vec3:
         """This vector's component along ``other`` (Unresolvable if ``other`` is zero)."""
         from fungeom.primitives.vec3.resolvers.projected import ProjectedVec3

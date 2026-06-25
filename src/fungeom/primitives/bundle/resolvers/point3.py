@@ -10,8 +10,9 @@ folds over the *present* members (tolerant of absence, strict over op-failure).
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import overload
 
 import numpy as np
 
@@ -27,18 +28,24 @@ from fungeom.primitives.bundle.resolvers.base import (
     decide_where,
     decide_zipped,
 )
+from fungeom.primitives.bundle.resolvers.point2 import Point2Bundle
 from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
+from fungeom.primitives.bundle.resolvers.transform import TransformBundle
 from fungeom.primitives.bundle.resolvers.vec3 import Vec3Bundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.line.resolvers.base import Line
 from fungeom.primitives.plane.resolvers.base import Plane
+from fungeom.primitives.point2.value import Point2Value
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
+from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.transform.resolvers.base import Transform
+from fungeom.primitives.vec3.resolvers.base import Vec3
 from fungeom.primitives.vec3.value import Float3
 
 
@@ -108,9 +115,9 @@ class Point3Bundle(Bundle[Point3Value]):
         """The position for ``key`` (→ ``Point3``); Unresolvable if absent or unknown."""
         return _Point3BundleAt(bundle=self, key=key)
 
-    def where(self, keys: Sequence[Hashable]) -> Point3Bundle:
+    def where(self, keys: Sequence[Hashable] | Roster) -> Point3Bundle:
         """The sub-cloud restricted to ``keys`` (roster and support both narrowed)."""
-        return _WherePoint3Bundle(source=self, keep=tuple(keys))
+        return _WherePoint3Bundle(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
 
     def relabel(self, mapping: RosterMap) -> Point3Bundle:
         """Re-key the cloud through ``mapping`` — the identity transfer of retargeting.
@@ -149,9 +156,28 @@ class Point3Bundle(Bundle[Point3Value]):
 
         return FittedLine(cloud=self, tolerance=tolerance)
 
-    def transformed_by(self, transform: Transform) -> Point3Bundle:
-        """Every present point moved by one rigid ``transform`` (a broadcast / map)."""
+    @overload
+    def transformed_by(self, transform: Transform) -> Point3Bundle: ...
+    @overload
+    def transformed_by(self, transform: TransformBundle) -> Point3Bundle: ...
+    def transformed_by(self, transform: Transform | TransformBundle) -> Point3Bundle:
+        """Move the cloud by ``transform`` — one shared rigid motion, or a *per-key* one.
+
+        A single ``Transform`` is broadcast over every present point; a ``TransformBundle`` is
+        applied **key by key** (each marker moved by its same-key pose, on the key intersection) —
+        the modeled-marker path, where each marker is rigidly attached to its own joint.
+        """
+        if isinstance(transform, TransformBundle):
+            return _PerKeyTransformedPoint3Bundle(source=self, transforms=transform)
         return _TransformedPoint3Bundle(source=self, transform=transform)
+
+    def in_frame(self, plane: Plane) -> Point2Bundle:
+        """Flatten every present point into ``plane``'s 2D chart (→ ``Point2Bundle``).
+
+        The broadcast of :meth:`Plane.to_local` — the markers-into-a-patch-plane step that
+        feeds ``Region2.hull``. Absent keys stay absent; the occlusion mask carries through.
+        """
+        return _InFramePoint2Bundle(source=self, plane=plane)
 
     def displacement_to(self, other: Point3Bundle) -> Vec3Bundle:
         """The key-aligned vectors from this cloud to ``other`` (→ ``Vec3Bundle``)."""
@@ -160,6 +186,38 @@ class Point3Bundle(Bundle[Point3Value]):
     def distance_to(self, other: Point3Bundle) -> ScalarBundle:
         """The key-aligned distances from this cloud to ``other`` (→ ``ScalarBundle``)."""
         return _DistanceScalarBundle(a=self, b=other)
+
+    def map_scalar(self, func: Callable[[Point3], Scalar]) -> ScalarBundle:
+        """Apply ``func`` to each present member (→ ``ScalarBundle``) — the open per-member escape hatch."""
+        return _MappedScalarBundle(source=self, func=func)
+
+    def map_point(self, func: Callable[[Point3], Point3]) -> Point3Bundle:
+        """Apply ``func`` to each present member (→ ``Point3Bundle``)."""
+        return _MappedPoint3Bundle(source=self, func=func)
+
+    def map_vec3(self, func: Callable[[Point3], Vec3]) -> Vec3Bundle:
+        """Apply ``func`` to each present member (→ ``Vec3Bundle``)."""
+        return _MappedVec3Bundle(source=self, func=func)
+
+    def distances_to(self, point: Point3) -> ScalarBundle:
+        """Each present member's distance to one ``point`` (a one-query broadcast → ``ScalarBundle``)."""
+        return self.map_scalar(lambda member: member.distance_to(point))
+
+    def closest_point_to(self, point: Point3) -> Point3:
+        """The present member nearest ``point`` (→ ``Point3``); Unresolvable over an empty cloud."""
+        return _ClosestPointInBundle(cloud=self, query=point)
+
+    def nearest_to(self, point: Point3) -> Roster:
+        """The key of the present member nearest ``point``, as a singleton :class:`Roster`.
+
+        Composes :meth:`distances_to` with :meth:`ScalarBundle.argmin`; resolver-shaped (empty →
+        Unresolvable), ties → first in roster order. ``cloud.where(cloud.nearest_to(p))`` slices it.
+        """
+        return self.distances_to(point).argmin()
+
+    def bounds(self) -> Point3Bundle:
+        """The axis-aligned bounding box as a ``{'min', 'max'}`` corner cloud (→ ``Point3Bundle``; Unresolvable if empty)."""
+        return _Point3BundleBounds(source=self)
 
 
 @dataclass(frozen=True, eq=False)
@@ -179,7 +237,7 @@ class _WherePoint3Bundle(Point3Bundle):
     """The sub-cloud of ``source`` restricted to the ``keep`` keys."""
 
     source: Point3Bundle
-    keep: tuple[Hashable, ...]
+    keep: tuple[Hashable, ...] | Roster
 
     def _decide(self) -> BundleDecision[Point3Value]:
         return decide_where(self.source, self.keep)
@@ -238,6 +296,30 @@ class _TransformedPoint3Bundle(Point3Bundle):
 
 
 @dataclass(frozen=True, eq=False)
+class _PerKeyTransformedPoint3Bundle(Point3Bundle):
+    """Each present point moved by its same-key pose — the per-joint (modeled-marker) transfer."""
+
+    source: Point3Bundle
+    transforms: TransformBundle
+
+    def _decide(self) -> BundleDecision[Point3Value]:
+        return decide_zipped(
+            self.source, self.transforms, lambda key: self.source.at(key).transformed_by(self.transforms.at(key))
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class _InFramePoint2Bundle(Point2Bundle):
+    """Every present point of ``source`` flattened into ``plane``'s chart — a cross-type lift to 2D."""
+
+    source: Point3Bundle
+    plane: Plane
+
+    def _decide(self) -> BundleDecision[Point2Value]:
+        return decide_mapped(self.source, lambda key: self.plane.to_local(self.source.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
 class _DisplacementVec3Bundle(Vec3Bundle):
     """The key-aligned displacements between two point clouds — a cross-type lift to vectors."""
 
@@ -257,3 +339,81 @@ class _DistanceScalarBundle(ScalarBundle):
 
     def _decide(self) -> BundleDecision[float]:
         return decide_zipped(self.a, self.b, lambda key: self.a.at(key).distance_to(self.b.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _MappedScalarBundle(ScalarBundle):
+    """Each present member of ``source`` mapped through ``func`` to a scalar (the generic escape hatch)."""
+
+    source: Point3Bundle
+    func: Callable[[Point3], Scalar]
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_mapped(self.source, lambda key: self.func(self.source.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _MappedPoint3Bundle(Point3Bundle):
+    """Each present member of ``source`` mapped through ``func`` to a point."""
+
+    source: Point3Bundle
+    func: Callable[[Point3], Point3]
+
+    def _decide(self) -> BundleDecision[Point3Value]:
+        return decide_mapped(self.source, lambda key: self.func(self.source.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _MappedVec3Bundle(Vec3Bundle):
+    """Each present member of ``source`` mapped through ``func`` to a vector."""
+
+    source: Point3Bundle
+    func: Callable[[Point3], Vec3]
+
+    def _decide(self) -> BundleDecision[Float3]:
+        return decide_mapped(self.source, lambda key: self.func(self.source.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _ClosestPointInBundle(Point3):
+    """The present member of ``cloud`` nearest the ``query`` point."""
+
+    cloud: Point3Bundle
+    query: Point3
+
+    def _decide(self) -> Point3Decision:
+        match self.cloud.decide(), self.query.decide():
+            case (Resolvable(collection), Resolvable(query)):
+                present = [collection.members[key] for key in collection.support()]
+                if not present:
+                    return Unresolvable("closest_point_to over an empty bundle is undefined")
+                nearest = min(present, key=lambda member: float(np.sum((member.coord - query.coord) ** 2)))
+                return Resolvable(Point3Value(coord=nearest.coord, frame=WORLD_FRAME))
+            case (Unresolvable() as bad, _):
+                return bad
+            case (_, Unresolvable() as bad):
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _Point3BundleBounds(Point3Bundle):
+    """The axis-aligned bounding box of ``source`` as a ``{'min', 'max'}`` corner cloud."""
+
+    source: Point3Bundle
+
+    def _decide(self) -> BundleDecision[Point3Value]:
+        match self.source.decide():
+            case Resolvable(collection):
+                present = [collection.members[key].coord for key in collection.support()]
+                if not present:
+                    return Unresolvable("bounds of an empty bundle is undefined")
+                stacked = np.array(present)
+                members: dict[Hashable, Point3Value] = {
+                    "min": Point3Value(coord=stacked.min(axis=0), frame=WORLD_FRAME),
+                    "max": Point3Value(coord=stacked.max(axis=0), frame=WORLD_FRAME),
+                }
+                return Resolvable(BundleValue(roster=("min", "max"), members=members))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover

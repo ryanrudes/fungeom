@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=2.4.6",
     "scipy>=1.17.1",
     "rich>=15.0.0",
+    "shapely>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -54,7 +55,7 @@ warn_unreachable = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["scipy.*"]
+module = ["scipy.*", "shapely.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

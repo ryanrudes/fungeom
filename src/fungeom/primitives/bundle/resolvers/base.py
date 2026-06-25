@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.core.resolver import Resolver
@@ -29,6 +29,9 @@ from fungeom.primitives.roster.value import RosterValue
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.scalar.decidability import ScalarDecision
 from fungeom.primitives.scalar.resolvers.base import Scalar
+
+if TYPE_CHECKING:
+    from fungeom.primitives.bundle.resolvers.boolean import BoolBundle
 
 
 class Bundle[V](Resolver[BundleValue[V]]):
@@ -65,6 +68,24 @@ class Bundle[V](Resolver[BundleValue[V]]):
         """
         return _BundleSupport(bundle=self)
 
+    def presence_mask(self) -> BoolBundle:
+        """The occlusion mask as a value — each *declared* key → whether it is present (→ ``BoolBundle``).
+
+        Total over the full roster (every declared key is in the mask, mapping to a boolean), so
+        an absent (occluded) key reads as ``False`` rather than dropping out.
+        """
+        from fungeom.primitives.bundle.resolvers.boolean import _BundlePresenceMask
+
+        return _BundlePresenceMask(source=self)
+
+    def all_present(self) -> Bool:
+        """Whether *every* declared key is present — no occlusions (→ ``Bool``)."""
+        return _BundleAllPresent(bundle=self)
+
+    def any_present(self) -> Bool:
+        """Whether *any* declared key is present — the bundle is not wholly occluded (→ ``Bool``)."""
+        return _BundleAnyPresent(bundle=self)
+
 
 def decide_gathered[V](
     member_keys: tuple[Hashable, ...],
@@ -91,11 +112,22 @@ def decide_gathered[V](
     return Resolvable(BundleValue(roster=roster, members=decided))
 
 
-def decide_where[V](source: Bundle[V], keep: tuple[Hashable, ...]) -> Resolvability[BundleValue[V]]:
-    """The sub-collection of ``source`` restricted to ``keep`` (roster and support both narrow)."""
+def decide_where[V](source: Bundle[V], keep: tuple[Hashable, ...] | Roster) -> Resolvability[BundleValue[V]]:
+    """The sub-collection of ``source`` restricted to ``keep`` (roster and support both narrow).
+
+    ``keep`` may be an explicit key tuple or a deferred :class:`Roster` (e.g. the result of
+    ``values.argmin()`` / ``cloud.nearest_to(p)``) — resolved lazily, so an unresolvable roster
+    propagates rather than being forced early.
+    """
+    if isinstance(keep, Roster):
+        decided_keep = keep.decide()
+        if isinstance(decided_keep, Unresolvable):
+            return decided_keep
+        kept = set(decided_keep.value.keys)
+    else:
+        kept = set(keep)
     match source.decide():
         case Resolvable(collection):
-            kept = set(keep)
             roster = tuple(key for key in collection.roster if key in kept)
             members = {key: value for key, value in collection.members.items() if key in kept}
             return Resolvable(BundleValue(roster=roster, members=members))
@@ -238,6 +270,36 @@ class _BundleCount(Scalar):
         match self.bundle.decide():
             case Resolvable(collection):
                 return Resolvable(float(collection.count))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _BundleAllPresent(Bool):
+    """Whether every declared key of ``bundle`` is present — V-agnostic, written once."""
+
+    bundle: Bundle[Any]
+
+    def _decide(self) -> BoolDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                return Resolvable(all(collection.present(key) for key in collection.roster))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _BundleAnyPresent(Bool):
+    """Whether any declared key of ``bundle`` is present — V-agnostic, written once."""
+
+    bundle: Bundle[Any]
+
+    def _decide(self) -> BoolDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                return Resolvable(any(collection.present(key) for key in collection.roster))
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover

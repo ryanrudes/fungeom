@@ -82,6 +82,33 @@ def test_frame_is_the_canonical_surface_frame() -> None:
     assert "no in-plane x axis" in decision.reason
 
 
+def test_to_local_and_embed_are_mutual_inverses() -> None:
+    from fungeom import Point2
+
+    # a tilted plane (so the chart is non-trivial)
+    plane = Plane.through(Point3.at(1, 2, 3), Direction3.of(1, 1, 1))
+    # embed a 2D point, flatten it back: round-trips exactly (2D → 3D → 2D)
+    for uv in [(0.0, 0.0), (0.3, -0.7), (2.0, 1.5)]:
+        world = plane.embed(Point2.at(*uv)).resolve()
+        assert np.isclose(plane.signed_distance(Point3.at(*world.coord)).resolve(), 0.0)  # lands on the plane
+        back = plane.to_local(Point3.at(*world.coord)).resolve()
+        assert np.allclose(back.coord, uv)
+    # an off-plane point flattens to the same chart coords as its projection (the normal is dropped)
+    flat = Plane.through(Point3.at(0, 0, 3), Direction3.of(0, 0, 1))
+    on = flat.to_local(Point3.at(5, 7, 3)).resolve().coord
+    off = flat.to_local(Point3.at(5, 7, 99)).resolve().coord
+    assert np.allclose(on, off)
+
+
+def test_bridge_propagates_an_ungrounded_plane() -> None:
+    from fungeom import CoordinateFrame, Point2
+
+    loose = Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))
+    ungrounded = Plane.through(loose, Direction3.of(0, 0, 1))
+    assert isinstance(ungrounded.to_local(Point3.at(1, 1, 1)).decide(), Unresolvable)
+    assert isinstance(ungrounded.embed(Point2.at(1, 1)).decide(), Unresolvable)
+
+
 def test_winding_normal_orients_by_polygon_winding() -> None:
     g = _ground()  # the z = 5 plane, normal +z
     # a unit square traced counter-clockwise (seen from +z) winds toward +z

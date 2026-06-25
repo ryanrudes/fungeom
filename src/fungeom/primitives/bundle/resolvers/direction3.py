@@ -21,6 +21,7 @@ from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.direction3.decidability import Direction3Decision
 from fungeom.primitives.direction3.resolvers.base import Direction3
 from fungeom.primitives.direction3.value import Direction3Value
+from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
 
 
@@ -65,9 +66,9 @@ class Direction3Bundle(Bundle[Direction3Value]):
         """The direction for ``key`` (→ ``Direction3``); Unresolvable if absent or unknown."""
         return _Direction3BundleAt(bundle=self, key=key)
 
-    def where(self, keys: Sequence[Hashable]) -> Direction3Bundle:
+    def where(self, keys: Sequence[Hashable] | Roster) -> Direction3Bundle:
         """The sub-bundle restricted to ``keys``."""
-        return _WhereDirection3Bundle(source=self, keep=tuple(keys))
+        return _WhereDirection3Bundle(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
 
     def relabel(self, mapping: RosterMap) -> Direction3Bundle:
         """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
@@ -95,7 +96,7 @@ class _GatheredDirection3Bundle(Direction3Bundle):
 @dataclass(frozen=True, eq=False)
 class _WhereDirection3Bundle(Direction3Bundle):
     source: Direction3Bundle
-    keep: tuple[Hashable, ...]
+    keep: tuple[Hashable, ...] | Roster
 
     def _decide(self) -> BundleDecision[Direction3Value]:
         return decide_where(self.source, self.keep)

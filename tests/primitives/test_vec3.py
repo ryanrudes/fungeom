@@ -39,6 +39,15 @@ def test_norm_dot_cross_lerp() -> None:
     assert np.allclose(a.lerp(b, 0.5).resolve(), [0.5, 0.5, 0])
 
 
+def test_scalar_triple_is_the_signed_volume() -> None:
+    # the standard basis spans a unit (right-handed) volume
+    assert Vec3.of(1, 0, 0).scalar_triple(Vec3.of(0, 1, 0), Vec3.of(0, 0, 1)).resolve() == 1.0
+    # swapping two vectors flips the sign
+    assert Vec3.of(0, 1, 0).scalar_triple(Vec3.of(1, 0, 0), Vec3.of(0, 0, 1)).resolve() == -1.0
+    # coplanar vectors enclose no volume
+    assert Vec3.of(1, 0, 0).scalar_triple(Vec3.of(0, 1, 0), Vec3.of(1, 1, 0)).resolve() == 0.0
+
+
 def test_normalized_project_reject_and_partialities() -> None:
     assert np.allclose(Vec3.of(0, 3, 4).normalized().resolve(), [0, 0.6, 0.8])
     a, b = Vec3.of(2, 2, 0), Vec3.of(1, 0, 0)

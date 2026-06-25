@@ -12,6 +12,7 @@ lower-layer primitives are imported normally.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, overload
 
 from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
@@ -22,6 +23,12 @@ from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.transform.resolvers.base import Transform
 from fungeom.primitives.vec3.resolvers.base import Vec3
+
+if TYPE_CHECKING:
+    from fungeom.primitives.bundle.resolvers.boolean import BoolBundle
+    from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+    from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
+    from fungeom.primitives.point2.resolvers.base import Point2
 
 
 class Plane(Resolver[PlaneValue]):
@@ -79,14 +86,41 @@ class Plane(Resolver[PlaneValue]):
 
         return PlaneOrigin(plane=self)
 
-    def project(self, point: Point3) -> Point3:
-        """The orthogonal projection of ``point`` onto this plane (→ ``Point3``)."""
+    @overload
+    def project(self, point: Point3) -> Point3: ...
+    @overload
+    def project(self, point: Point3Bundle) -> Point3Bundle: ...
+    def project(self, point: Point3 | Point3Bundle) -> Point3 | Point3Bundle:
+        """The orthogonal projection of ``point`` onto this plane (→ ``Point3``).
+
+        Broadcasts over a ``Point3Bundle`` (→ ``Point3Bundle``, per-key, occlusion-aware).
+        """
+        from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+
+        if isinstance(point, Point3Bundle):
+            from fungeom.primitives.bundle.resolvers.plane_ops import PlaneProjectBundle
+
+            return PlaneProjectBundle(plane=self, cloud=point)
         from fungeom.primitives.plane.resolvers.project import PlaneProject
 
         return PlaneProject(plane=self, point=point)
 
-    def signed_distance(self, point: Point3) -> Scalar:
-        """The signed distance from ``point`` to the plane (positive on the normal side)."""
+    @overload
+    def signed_distance(self, point: Point3) -> Scalar: ...
+    @overload
+    def signed_distance(self, point: Point3Bundle) -> ScalarBundle: ...
+    def signed_distance(self, point: Point3 | Point3Bundle) -> Scalar | ScalarBundle:
+        """The signed distance from ``point`` to the plane (positive on the normal side).
+
+        Broadcasts over a ``Point3Bundle`` (→ ``ScalarBundle``) — the per-marker height field used
+        for footprint clearance.
+        """
+        from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+
+        if isinstance(point, Point3Bundle):
+            from fungeom.primitives.bundle.resolvers.plane_ops import PlaneSignedDistanceBundle
+
+            return PlaneSignedDistanceBundle(plane=self, cloud=point)
         from fungeom.primitives.plane.resolvers.signed_distance import PlaneSignedDistance
 
         return PlaneSignedDistance(plane=self, point=point)
@@ -95,8 +129,21 @@ class Plane(Resolver[PlaneValue]):
         """The unsigned distance from ``point`` to the plane (``|signed_distance|``)."""
         return abs(self.signed_distance(point))
 
-    def contains(self, point: Point3, tolerance: float = 1e-9) -> Bool:
-        """Whether ``point`` lies on the plane within ``tolerance`` (→ ``Bool``)."""
+    @overload
+    def contains(self, point: Point3, tolerance: float = ...) -> Bool: ...
+    @overload
+    def contains(self, point: Point3Bundle, tolerance: float = ...) -> BoolBundle: ...
+    def contains(self, point: Point3 | Point3Bundle, tolerance: float = 1e-9) -> Bool | BoolBundle:
+        """Whether ``point`` lies on the plane within ``tolerance`` (→ ``Bool``).
+
+        Broadcasts over a ``Point3Bundle`` (→ ``BoolBundle``, per-key).
+        """
+        from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+
+        if isinstance(point, Point3Bundle):
+            from fungeom.primitives.bundle.resolvers.plane_ops import PlaneContainsBundle
+
+            return PlaneContainsBundle(plane=self, cloud=point, tolerance=tolerance)
         return abs(self.signed_distance(point)).le(tolerance)
 
     def facing(self, point: Point3) -> Plane:
@@ -136,6 +183,30 @@ class Plane(Resolver[PlaneValue]):
         from fungeom.primitives.plane.resolvers.frame import PlaneFrame
 
         return PlaneFrame(plane=self, origin=origin, tangent=tangent)
+
+    def to_local(self, point: Point3) -> "Point2":
+        """``point``'s coordinates in the plane's intrinsic 2D chart (→ ``Point2``).
+
+        The 3D→2D bridge: ``point`` is orthogonally projected onto the plane and expressed
+        in its deterministic local basis (the gauge is fixed by the normal alone, so
+        :meth:`to_local` and :meth:`embed` are mutual inverses). The natural way to flatten
+        markers into a patch plane before building a ``Region2``. Resolvable whenever the
+        plane and point are.
+        """
+        from fungeom.primitives.plane.resolvers.to_local import PlaneToLocal
+
+        return PlaneToLocal(plane=self, point=point)
+
+    def embed(self, local: "Point2") -> Point3:
+        """The world point at chart coordinates ``local`` on this plane (→ ``Point3``).
+
+        The 2D→3D inverse of :meth:`to_local`: lifts a region's 2D vertices/samples back to
+        3D world space on the plane (``origin + u·x + v·y``). Resolvable whenever the plane
+        and the 2D point are.
+        """
+        from fungeom.primitives.plane.resolvers.embed import PlaneEmbed
+
+        return PlaneEmbed(plane=self, local=local)
 
     def winding_normal(self, points: Sequence[Point3], tolerance: float = 1e-9) -> Direction3:
         """The normal whose side ``points`` wind counter-clockwise around (→ ``Direction3``).

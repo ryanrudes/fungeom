@@ -19,6 +19,9 @@ from fungeom.primitives.bundle.resolvers.base import (
     decide_zipped,
 )
 from fungeom.primitives.bundle.value import BundleValue
+from fungeom.primitives.roster.decidability import RosterDecision
+from fungeom.primitives.roster.resolvers.base import Roster
+from fungeom.primitives.roster.value import RosterValue
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.scalar.decidability import ScalarDecision
 from fungeom.primitives.scalar.resolvers.base import Scalar
@@ -61,9 +64,9 @@ class ScalarBundle(Bundle[float]):
         """The value for ``key`` (→ ``Scalar``); Unresolvable if absent or unknown."""
         return _ScalarBundleAt(bundle=self, key=key)
 
-    def where(self, keys: Sequence[Hashable]) -> ScalarBundle:
+    def where(self, keys: Sequence[Hashable] | Roster) -> ScalarBundle:
         """The sub-bundle restricted to ``keys``."""
-        return _WhereScalarBundle(source=self, keep=tuple(keys))
+        return _WhereScalarBundle(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
 
     def relabel(self, mapping: RosterMap) -> ScalarBundle:
         """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
@@ -84,6 +87,20 @@ class ScalarBundle(Bundle[float]):
     def max(self) -> Scalar:
         """The largest present value (→ ``Scalar``); Unresolvable if none are."""
         return _ScalarBundleMax(bundle=self)
+
+    def argmin(self) -> Roster:
+        """The key of the smallest present value, as a singleton :class:`Roster`.
+
+        Returned as a (one-key) ``Roster`` rather than a bare key, so it stays resolver-shaped —
+        an empty bundle is ``Unresolvable``, and the result composes with the roster/bundle
+        algebra (``cloud.where(values.argmin())`` slices to the winner). Ties resolve to the
+        first such key in roster order.
+        """
+        return _ArgExtremeRoster(bundle=self, want_max=False)
+
+    def argmax(self) -> Roster:
+        """The key of the largest present value, as a singleton :class:`Roster` (see :meth:`argmin`)."""
+        return _ArgExtremeRoster(bundle=self, want_max=True)
 
     def __add__(self, other: ScalarBundle) -> ScalarBundle:
         """Key-aligned sum with ``other`` (on the intersection of present keys)."""
@@ -115,7 +132,7 @@ class _GatheredScalarBundle(ScalarBundle):
 @dataclass(frozen=True, eq=False)
 class _WhereScalarBundle(ScalarBundle):
     source: ScalarBundle
-    keep: tuple[Hashable, ...]
+    keep: tuple[Hashable, ...] | Roster
 
     def _decide(self) -> BundleDecision[float]:
         return decide_where(self.source, self.keep)
@@ -195,6 +212,29 @@ class _ScalarBundleMax(Scalar):
                 if not present:
                     return Unresolvable("max of an empty bundle is undefined")
                 return Resolvable(float(np.max(present)))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _ArgExtremeRoster(Roster):
+    """The key of the extreme present value of ``bundle`` as a singleton roster (ties → first-in-order)."""
+
+    bundle: ScalarBundle
+    want_max: bool
+
+    def _decide(self) -> RosterDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                present = [(key, collection.members[key]) for key in collection.support()]
+                if not present:
+                    return Unresolvable("argmin/argmax of an empty bundle is undefined")
+                best_key, best_value = present[0]
+                for key, value in present[1:]:
+                    if (value > best_value) if self.want_max else (value < best_value):
+                        best_key, best_value = key, value
+                return Resolvable(RosterValue(keys=(best_key,)))
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover

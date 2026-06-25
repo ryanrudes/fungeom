@@ -17,7 +17,9 @@ from fungeom.primitives.signals.interpolation import Interpolation
 from fungeom.primitives.signals.point3 import Point3Signal
 from fungeom.primitives.signals.scalar import ScalarSignal
 from fungeom.primitives.signals.series import SampledSeries, Signal
-from fungeom.primitives.signals.bundle import Point3BundleSignal, TransformBundleSignal
+from fungeom.primitives.signals.boolean import BoolSeries, BoolSignal
+from fungeom.primitives.signals.plane import PlaneSignal
+from fungeom.primitives.signals.bundle import Point3BundleSignal, ScalarBundleSignal, TransformBundleSignal
 from fungeom.primitives.signals.transform import TransformSignal
 from fungeom.primitives.signals.vec3 import Vec3Signal
 
@@ -28,10 +30,14 @@ __all__ = [
     "Interpolation",
     "Boundary",
     "ScalarSignal",
+    "BoolSignal",
+    "BoolSeries",
     "Vec3Signal",
     "Direction3Signal",
     "TransformSignal",
     "Point3Signal",
+    "PlaneSignal",
     "Point3BundleSignal",
+    "ScalarBundleSignal",
     "TransformBundleSignal",
 ]

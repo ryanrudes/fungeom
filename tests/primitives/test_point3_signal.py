@@ -82,3 +82,36 @@ def test_reparameterize_by_warp() -> None:
     bent = sig.reparameterize(warp)
     assert bent.over().resolve() == IntervalValue(0.0, 2.0)
     assert np.allclose(bent.at(2.0).resolve().coord, [10.0, 0.0, 0.0])  # last sample carries
+
+
+def test_velocity_and_speed() -> None:
+    p = Point3Signal.from_samples([0.0, 1.0, 2.0], [[0, 0, 0], [3, 4, 0], [6, 8, 0]])
+    assert np.allclose(p.velocity().at(1.0).resolve(), [3, 4, 0])  # the time derivative of position
+    assert p.speed().at(1.0).resolve() == 5.0  # |velocity|
+    assert isinstance(Point3Signal.from_samples([0.0], [[0, 0, 0]]).velocity().decide(), Unresolvable)
+
+
+def test_transformed_by_a_moving_pose() -> None:
+    from scipy.spatial.transform import Rotation
+
+    from fungeom import RigidTransform, TransformSignal, Unresolvable
+
+    poses = [
+        RigidTransform.from_rotation(Rotation.from_euler("z", a, degrees=True), [tx, 0, 0])
+        for a, tx in [(0, 0), (90, 10)]
+    ]
+    pose = TransformSignal.from_samples([0.0, 2.0], poses)
+    local = Point3Signal.from_samples([0.0, 2.0], [[1, 0, 0], [1, 0, 0]])  # fixed in the moving frame
+    world = local.transformed_by(pose)
+    assert np.allclose(world.at(0.0).resolve().coord, [1, 0, 0])  # identity pose
+    assert np.allclose(world.at(2.0).resolve().coord, [10, 1, 0], atol=1e-9)  # rot90·(1,0,0) + (10,0,0)
+    assert isinstance(world.at(5.0).decide(), Unresolvable)  # off the pose's support
+
+
+def test_map_and_lift() -> None:
+    p = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 0], [2, 0, 0]])
+    moved = p.map(lambda point: point.translate((0, 5, 0)))  # unary map
+    assert np.allclose(moved.at(1.0).resolve().coord, [1, 5, 0])
+    q = Point3Signal.from_samples([0.0, 2.0], [[1, 1, 1], [1, 1, 1]])
+    mid = Point3Signal.lift([p, q], lambda a, b: a.midpoint(b))  # two trajectories → their midpoint
+    assert np.allclose(mid.at(0.0).resolve().coord, [0.5, 0.5, 0.5])

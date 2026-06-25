@@ -65,6 +65,43 @@ class Transform(Resolver[RigidTransform]):
         axis_vector = axis.as_vector() if isinstance(axis, Direction3) else axis
         return AxisAngleTransform(axis=axis_vector, angle=as_scalar_resolver(angle))
 
+    @classmethod
+    def aligning(cls, source: Direction3, target: Direction3) -> Transform:
+        """The shortest-arc rotation carrying ``source`` onto ``target`` (Unresolvable if antipodal)."""
+        from fungeom.primitives.transform.resolvers.aligning import AligningTransform
+
+        return AligningTransform(source=source, target=target)
+
+    @classmethod
+    def from_axes(cls, x: Direction3, y: Direction3, origin: Vec3 | ArrayLike = (0.0, 0.0, 0.0)) -> Transform:
+        """The right-handed frame at ``origin`` with ``+x`` = ``x`` and ``+z`` = ``x × y``.
+
+        ``y`` is a hint, Gram–Schmidt-projected to give ``+y = z × x``. Unresolvable when ``x``
+        and ``y`` are parallel (no third axis). ``origin`` may be a deferred ``Vec3`` or raw
+        components.
+        """
+        from fungeom.primitives.transform.resolvers.from_axes import FromAxesTransform
+        from fungeom.primitives.vec3.resolvers.literal import vec3_resolver
+        from fungeom.primitives.vec3.value import as_vec3
+
+        origin_vec = origin if isinstance(origin, Vec3) else vec3_resolver(as_vec3(origin))
+        return FromAxesTransform(primary=x, secondary=y, origin=origin_vec)
+
+    @classmethod
+    def look_at(cls, eye: Vec3 | ArrayLike, target: Vec3 | ArrayLike, up: Direction3) -> Transform:
+        """A viewing frame at ``eye`` whose ``+z`` looks toward ``target``, ``+y`` roughly ``up``.
+
+        Unresolvable when ``eye`` coincides with ``target`` (no view direction) or ``up`` is
+        parallel to it. ``eye`` / ``target`` may be deferred ``Vec3``s or raw components.
+        """
+        from fungeom.primitives.transform.resolvers.look_at import LookAtTransform
+        from fungeom.primitives.vec3.resolvers.literal import vec3_resolver
+        from fungeom.primitives.vec3.value import as_vec3
+
+        eye_vec = eye if isinstance(eye, Vec3) else vec3_resolver(as_vec3(eye))
+        target_vec = target if isinstance(target, Vec3) else vec3_resolver(as_vec3(target))
+        return LookAtTransform(eye=eye_vec, target=target_vec, up=up)
+
     def compose(self, other: Transform) -> Transform:
         """``self ∘ other`` — apply ``other`` first, then ``self``."""
         from fungeom.primitives.transform.resolvers.composed import ComposedTransform

@@ -91,6 +91,18 @@ class Direction3(Resolver[Direction3Value]):
 
         return CrossDirection3(a=self, b=other)
 
+    def signed_angle_to(self, other: Direction3, *, about: Direction3) -> Scalar:
+        """The signed angle to ``other`` measured in the plane ⟂ ``about`` (RH; → ``Scalar``).
+
+        Both directions are projected into the plane perpendicular to ``about``; the result is
+        right-handed about ``about`` in ``(-π, π]``. Unresolvable if either direction is parallel
+        to ``about`` (its in-plane component vanishes). The 3D companion to
+        :meth:`Direction2.signed_angle_to`.
+        """
+        from fungeom.primitives.direction3.resolvers.signed_angle import Direction3SignedAngle
+
+        return Direction3SignedAngle(source=self, target=other, axis=about)
+
     def any_perpendicular(self) -> Direction3:
         """Some unit direction perpendicular to this one (arbitrary but deterministic; total)."""
         from fungeom.primitives.direction3.resolvers.any_perpendicular import AnyPerpendicular

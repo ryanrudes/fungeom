@@ -118,7 +118,10 @@ the README Examples table in sync, and confirms each still runs under
   structurally-equal resolvers are not `==`. Memoization keys on identity — correct.
 - Value types copy their input array in `__post_init__` before `freeze`-ing, so
   constructing one never mutates the caller's array.
-- Don't add unused dependencies — only `numpy`, `scipy`, `rich` are used.
+- Runtime deps are `numpy`, `scipy`, `rich`, and `shapely` (GEOS — used for the
+  general `Region2` polygon booleans / `offset`, the same "call a battle-tested
+  numeric engine, surface degeneracy as `Unresolvable`" pattern as the SVD fits).
+  Add a new dependency only when it's the genuinely right tool, not for convenience.
 - **A concrete resolver's dataclass field must not share a name with a facade
   method/classmethod.** The concrete subclasses the facade, so e.g. a field
   `start`/`end` under `Interval` (which has `start()`/`end()`), `rate` under

@@ -19,15 +19,18 @@ host a bundle value; the base bundle layer never imports signals).
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
+from typing import overload
 
 import numpy as np
 
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
+from fungeom.primitives.bundle.resolvers.fit import fit_plane_coords, orient_plane_track
 from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
 from fungeom.primitives.bundle.resolvers.transform import TransformBundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.coverage.resolvers.base import Coverage
@@ -38,6 +41,7 @@ from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.interval.resolvers.base import Interval
 from fungeom.primitives.interval.value import IntervalValue
+from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.sampling.resolvers.base import Sampling
@@ -49,14 +53,18 @@ from fungeom.primitives.signals.point3 import POINT3_BLEND, Point3Signal
 from fungeom.primitives.signals.series import (
     SampledSeries,
     Signal,
+    decide_lifted,
     decide_reparameterized,
     decide_resampled,
     decide_restricted,
     decide_sample,
     decide_warped,
+    resolved_grid,
     support_from_times,
 )
-from fungeom.primitives.signals.transform import TRANSFORM_BLEND
+from fungeom.primitives.signals.plane import PLANE_BLEND, PlaneSignal
+from fungeom.primitives.signals.scalar import SCALAR_BLEND, ScalarSignal
+from fungeom.primitives.signals.transform import TRANSFORM_BLEND, TransformSignal
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
 from fungeom.primitives.timewarp.resolvers.base import TimeWarp
@@ -256,6 +264,94 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
     def shift(self, by: Duration | float) -> Point3BundleSignal:
         """This cloud signal translated in time by ``by``."""
         return self.reparameterize(TimeMap.shift(by))
+
+    @overload
+    def transformed_by(self, pose: TransformSignal) -> Point3BundleSignal: ...
+    @overload
+    def transformed_by(self, pose: TransformBundleSignal) -> Point3BundleSignal: ...
+    def transformed_by(self, pose: TransformSignal | TransformBundleSignal) -> Point3BundleSignal:
+        """Carry the cloud through a moving ``pose`` over time (→ ``Point3BundleSignal``).
+
+        A single ``TransformSignal`` moves every present marker by that instant's shared pose
+        (the rigid-body case); a ``TransformBundleSignal`` moves each marker by its *own* joint's
+        pose, **key by key** — the modeled-marker path. Time-aligned ∩ supports; off the pose's
+        support → ``Unresolvable``.
+        """
+        if isinstance(pose, TransformBundleSignal):
+            return _PerJointTransformedPoint3BundleSignal(a=self, poses=pose)
+        return _TransformedPoint3BundleSignal(a=self, pose=pose)
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N, 3)`` array + ``(T, N)`` present mask.
+
+        The vectorized cloud readback: columns follow the roster, an occluded cell is ``nan`` with
+        a ``False`` mask. Resolves eagerly (raises if a target is off the support).
+        """
+        return resolved_grid(self.resample(onto), lambda value: value.coord, np.full(3, np.nan))
+
+    def fit_plane(self, *, tolerance: float = 1e-6) -> PlaneSignal:
+        """The least-squares plane fitted to the cloud at every frame (→ ``PlaneSignal``).
+
+        The **moving patch surface** — a batched per-frame SVD fit (the over-time companion to
+        the static ``Point3Bundle.fit_plane``). Consecutive normals are oriented to agree (the
+        per-frame SVD sign is arbitrary), so the plane track is continuous and its slerp blend
+        well-posed. Strict: a frame whose cloud is degenerate (fewer than three present points,
+        near-collinear, or isotropic) makes the whole signal ``Unresolvable``.
+        """
+        return _FittedPlaneSignal(source=self, tolerance=tolerance)
+
+
+@dataclass(frozen=True, eq=False)
+class _TransformedPoint3BundleSignal(Point3BundleSignal):
+    """A point cloud carried through one moving pose over time — the transport lift."""
+
+    a: Point3BundleSignal
+    pose: TransformSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_lifted(
+            self.a, self.pose, lambda t: self.a.at(t).transformed_by(self.pose.at(t)), POINT3_BUNDLE_BLEND
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class _PerJointTransformedPoint3BundleSignal(Point3BundleSignal):
+    """A point cloud carried through per-joint moving poses over time — the modeled-marker path."""
+
+    a: Point3BundleSignal
+    poses: TransformBundleSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_lifted(
+            self.a, self.poses, lambda t: self.a.at(t).transformed_by(self.poses.at(t)), POINT3_BUNDLE_BLEND
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class _FittedPlaneSignal(PlaneSignal):
+    """A plane fitted per frame to a moving point cloud — the moving patch surface."""
+
+    source: Point3BundleSignal
+    tolerance: float
+
+    def _decide(self) -> Resolvability[SampledSeries[PlaneValue]]:
+        decided = self.source.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        series = decided.value
+        raw: list[PlaneValue] = []
+        for frame in series.values:
+            coords = np.array([frame.members[key].coord for key in frame.support()])
+            fit = fit_plane_coords(coords, self.tolerance)
+            if isinstance(fit, Unresolvable):
+                return Unresolvable(f"plane fit failed at a frame: {fit.reason}")
+            raw.append(fit.value)
+        planes = orient_plane_track(raw)
+        return Resolvable(
+            SampledSeries(
+                series.times, tuple(planes), Interpolation.linear, Boundary.undefined, PLANE_BLEND, series.support
+            )
+        )
 
 
 @dataclass(frozen=True, eq=False)
@@ -557,3 +653,265 @@ class _RestrictedTransformBundleSignal(TransformBundleSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
         return decide_restricted(self.source, self.to)
+
+
+# --- ScalarBundleSignal (T9) — a collection of scalars over time, with per-instant folds ---
+
+
+class _ScalarBundleBlend:
+    """Key-by-key linear interpolation of two scalar clouds (over the keys present in both)."""
+
+    def between(self, a: BundleValue[float], b: BundleValue[float], frac: float) -> Resolvability[BundleValue[float]]:
+        members: dict[Hashable, float] = {}
+        for key in a.roster:
+            if a.present(key) and b.present(key):
+                members[key] = a.members[key] + frac * (b.members[key] - a.members[key])
+        return Resolvable(BundleValue(roster=a.roster, members=members))
+
+
+SCALAR_BUNDLE_BLEND = _ScalarBundleBlend()
+
+
+def decide_folded[U](
+    source: Signal[BundleValue[float]],
+    fold: Callable[[BundleValue[float]], Resolvability[U]],
+    blend: Blend[U],
+) -> Resolvability[SampledSeries[U]]:
+    """Reduce each frame of a scalar-cloud signal to one value — a per-instant fold (→ ``Signal[U]``).
+
+    ``fold`` collapses one frame's bundle (e.g. the minimum over its present members); a frame
+    whose fold is ``Unresolvable`` (a fold over no present members) makes the whole signal so.
+    The result is sampled at the same instants over the same support, read linearly.
+    """
+    decided = source.decide()
+    if isinstance(decided, Unresolvable):
+        return decided
+    series = decided.value
+    out: list[U] = []
+    for frame in series.values:
+        reduced = fold(frame)
+        if isinstance(reduced, Unresolvable):
+            return Unresolvable(f"fold is undefined at a frame: {reduced.reason}")
+        out.append(reduced.value)
+    return Resolvable(
+        SampledSeries(series.times, tuple(out), Interpolation.linear, Boundary.undefined, blend, series.support)
+    )
+
+
+def _present_values(frame: BundleValue[float]) -> list[float]:
+    return [frame.members[key] for key in frame.support()]
+
+
+class ScalarBundleSignal(Signal[BundleValue[float]]):
+    """A deferred collection of scalars over time — e.g. per-marker clearance over a clip.
+
+    Build with :meth:`from_frames` (a ``(T, N)`` array with an optional ``(T, N)`` presence
+    mask); sample with :meth:`at` (→ a ``ScalarBundle``). The folds reduce the cloud *per
+    instant* to a plain ``ScalarSignal`` — :meth:`min` / :meth:`max` / :meth:`mean` / :meth:`sum`
+    / :meth:`count` — so a footprint's min-clearance-over-time is ``clearances.min()``, and "any
+    corner in contact" is ``clearances.min().le(0)`` (a ``BoolSignal``). Temporal ops are
+    inherited from the generic core.
+    """
+
+    type Value = SampledSeries[BundleValue[float]]
+    """The resolved value type — a ``SampledSeries`` of scalar clouds."""
+
+    @classmethod
+    def from_frames(
+        cls,
+        times: ArrayLike,
+        frames: ArrayLike,
+        keys: Sequence[Hashable] | None = None,
+        via: Interpolation = Interpolation.linear,
+        outside: Boundary = Boundary.undefined,
+        max_gap: float | None = None,
+        present: ArrayLike | None = None,
+    ) -> ScalarBundleSignal:
+        """A scalar-cloud signal from a ``(T, N)`` array over ``times`` (keyed by ``keys``).
+
+        With a ``(T, N)`` ``present`` mask a key absent in a frame is occluded there (omitted
+        from that frame's bundle); ``max_gap`` marks temporal dropouts as for the other signals.
+        """
+        data = np.array(frames, dtype=float)  # copy; expected shape (T, N)
+        member_keys = tuple(keys) if keys is not None else tuple(range(data.shape[1]))
+        mask = None if present is None else np.array(present, dtype=bool)
+        return _SampledScalarBundleSignal(
+            sampling=Sampling.at_times(times),
+            frames=data,
+            member_keys=member_keys,
+            present=mask,
+            interpolation=via,
+            boundary=outside,
+            max_gap=max_gap,
+        )
+
+    def at(self, instant: Instant | float) -> ScalarBundle:
+        """The scalar cloud at ``instant`` (→ ``ScalarBundle``; bridges to the static algebra)."""
+        from fungeom.primitives.instant.resolvers.literal import as_instant_resolver
+
+        return _ScalarBundleSampleAt(signal=self, instant=as_instant_resolver(instant))
+
+    def min(self) -> ScalarSignal:
+        """The per-instant minimum over the present members (→ ``ScalarSignal``; empty frame → Unresolvable)."""
+        return _FoldedScalarSignal(source=self, kind="min")
+
+    def max(self) -> ScalarSignal:
+        """The per-instant maximum over the present members (→ ``ScalarSignal``; empty frame → Unresolvable)."""
+        return _FoldedScalarSignal(source=self, kind="max")
+
+    def mean(self) -> ScalarSignal:
+        """The per-instant average over the present members (→ ``ScalarSignal``; empty frame → Unresolvable)."""
+        return _FoldedScalarSignal(source=self, kind="mean")
+
+    def sum(self) -> ScalarSignal:
+        """The per-instant sum over the present members (→ ``ScalarSignal``; ``0`` over an empty frame)."""
+        return _FoldedScalarSignal(source=self, kind="sum")
+
+    def count(self) -> ScalarSignal:
+        """The per-instant count of present members (→ ``ScalarSignal``; total)."""
+        return _FoldedScalarSignal(source=self, kind="count")
+
+    def resample(self, onto: Sampling) -> ScalarBundleSignal:
+        """This signal reconstructed onto a new time base (Unresolvable if a target is undefined)."""
+        return _ResampledScalarBundleSignal(source=self, onto=onto)
+
+    def reparameterize(self, by: AffineTimeMap | TimeMap | TimeWarp) -> ScalarBundleSignal:
+        """This signal's time base warped ``by`` a map (shift / scale / reverse / monotonic warp)."""
+        if isinstance(by, TimeWarp):
+            return _ReparameterizedScalarBundleSignal(source=self, by=by)
+        from fungeom.primitives.timemap.resolvers.literal import as_timemap_resolver
+
+        return _ReparameterizedScalarBundleSignal(source=self, by=as_timemap_resolver(by))
+
+    def restrict(self, to: Interval | Coverage) -> ScalarBundleSignal:
+        """Narrow this signal's support to its overlap with ``to`` (Unresolvable if disjoint)."""
+        window = to if isinstance(to, Coverage) else Coverage.of([to])
+        return _RestrictedScalarBundleSignal(source=self, to=window)
+
+    def shift(self, by: Duration | float) -> ScalarBundleSignal:
+        """This signal translated in time by ``by``."""
+        return self.reparameterize(TimeMap.shift(by))
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N)`` array + ``(T, N)`` present mask.
+
+        The vectorized scalar-cloud readback (an occluded cell is ``nan`` with a ``False`` mask);
+        resolves eagerly (raises if a target is off the support).
+        """
+        return resolved_grid(self.resample(onto), lambda value: value, np.nan)
+
+
+_SCALAR_FOLDS: dict[str, Callable[[BundleValue[float]], Resolvability[float]]] = {
+    "min": lambda frame: (
+        Resolvable(min(_present_values(frame))) if frame.count else Unresolvable("min over an empty frame")
+    ),
+    "max": lambda frame: (
+        Resolvable(max(_present_values(frame))) if frame.count else Unresolvable("max over an empty frame")
+    ),
+    "mean": lambda frame: (
+        Resolvable(sum(_present_values(frame)) / frame.count)
+        if frame.count
+        else Unresolvable("mean over an empty frame")
+    ),
+    "sum": lambda frame: Resolvable(float(sum(_present_values(frame)))),
+    "count": lambda frame: Resolvable(float(frame.count)),
+}
+
+
+@dataclass(frozen=True, eq=False)
+class _SampledScalarBundleSignal(ScalarBundleSignal):
+    sampling: Sampling
+    frames: np.ndarray
+    member_keys: tuple[Hashable, ...]
+    present: np.ndarray | None
+    interpolation: Interpolation
+    boundary: Boundary
+    max_gap: float | None
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
+        match self.sampling.decide():
+            case Resolvable(base):
+                if self.frames.shape[0] != base.count:
+                    return Unresolvable(f"{self.frames.shape[0]} frames for {base.count} sample times")
+                clouds: list[BundleValue[float]] = []
+                for ti in range(base.count):
+                    members: dict[Hashable, float] = {}
+                    for ni, key in enumerate(self.member_keys):
+                        if self.present is None or bool(self.present[ti, ni]):
+                            members[key] = float(self.frames[ti, ni])
+                    clouds.append(BundleValue(roster=self.member_keys, members=members))
+                return Resolvable(
+                    SampledSeries(
+                        base.times,
+                        tuple(clouds),
+                        self.interpolation,
+                        self.boundary,
+                        SCALAR_BUNDLE_BLEND,
+                        support_from_times(base.times, self.max_gap),
+                    )
+                )
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _ScalarBundleSampleAt(ScalarBundle):
+    signal: ScalarBundleSignal
+    instant: Instant
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_sample(self.signal, self.instant)
+
+
+@dataclass(frozen=True, eq=False)
+class _FoldedScalarSignal(ScalarSignal):
+    """A scalar-cloud signal reduced per instant — min / max / mean / sum / count (→ ``ScalarSignal``)."""
+
+    source: ScalarBundleSignal
+    kind: str
+
+    def _decide(self) -> Resolvability[SampledSeries[float]]:
+        return decide_folded(self.source, _SCALAR_FOLDS[self.kind], SCALAR_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _ResampledScalarBundleSignal(ScalarBundleSignal):
+    source: ScalarBundleSignal
+    onto: Sampling
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
+        return decide_resampled(self.source, self.onto)
+
+
+@dataclass(frozen=True, eq=False)
+class _ReparameterizedScalarBundleSignal(ScalarBundleSignal):
+    source: ScalarBundleSignal
+    by: TimeMap | TimeWarp
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
+        if isinstance(self.by, TimeWarp):
+            return decide_warped(self.source, self.by)
+        return decide_reparameterized(self.source, self.by)
+
+
+@dataclass(frozen=True, eq=False)
+class _RestrictedScalarBundleSignal(ScalarBundleSignal):
+    source: ScalarBundleSignal
+    to: Coverage
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
+        return decide_restricted(self.source, self.to)
+
+
+@dataclass(frozen=True, eq=False)
+class _PlaneClearanceBundleSignal(ScalarBundleSignal):
+    """Per-marker signed distance from a moving cloud to a moving plane — the clearance field over time."""
+
+    plane: PlaneSignal
+    cloud: Point3BundleSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
+        return decide_lifted(
+            self.plane, self.cloud, lambda t: self.plane.at(t).signed_distance(self.cloud.at(t)), SCALAR_BUNDLE_BLEND
+        )

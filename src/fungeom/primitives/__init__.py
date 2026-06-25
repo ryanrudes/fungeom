@@ -34,11 +34,15 @@ from fungeom.primitives.segment import Segment, SegmentValue
 from fungeom.primitives.segment2 import Segment2, Segment2Value
 from fungeom.primitives.scalar import Scalar
 from fungeom.primitives.signals import (
+    BoolSignal,
     Boundary,
     Direction3Signal,
     Interpolation,
+    PlaneSignal,
     Point3BundleSignal,
+    ScalarBundleSignal,
     Point3Signal,
+    BoolSeries,
     SampledSeries,
     ScalarSignal,
     TransformBundleSignal,
@@ -47,14 +51,18 @@ from fungeom.primitives.signals import (
 )
 from fungeom.primitives.timeline import MASTER_CLOCK, Clock, Timeline
 from fungeom.primitives.bundle import (
+    BoolBundle,
     Bundle,
     BundleValue,
     Direction3Bundle,
+    Point2Bundle,
     Point3Bundle,
     ScalarBundle,
     TransformBundle,
     Vec3Bundle,
 )
+from fungeom.primitives.region2 import Region2, Region2Value
+from fungeom.primitives.face import Face, FaceValue
 from fungeom.primitives.timemap import AffineTimeMap, TimeMap
 from fungeom.primitives.timewarp import PiecewiseLinearWarp, TimeWarp
 from fungeom.primitives.transform import Mat3, Mat4, RigidTransform, Transform
@@ -77,6 +85,8 @@ __all__ = [
     "Point2",
     "Point3",
     "Plane",
+    "Region2",
+    "Face",
     "Line",
     "Line2",
     "Ray",
@@ -93,13 +103,18 @@ __all__ = [
     "Timeline",
     "Sampling",
     "Bundle",
+    "BoolBundle",
     "ScalarBundle",
     "Vec3Bundle",
     "Direction3Bundle",
     "TransformBundle",
+    "Point2Bundle",
     "Point3Bundle",
+    "PlaneSignal",
     "Point3BundleSignal",
+    "ScalarBundleSignal",
     "TransformBundleSignal",
+    "BoolSignal",
     "Roster",
     "RosterMap",
     "Interpolation",
@@ -117,6 +132,7 @@ __all__ = [
     "Clock",
     "MASTER_CLOCK",
     "SamplingValue",
+    "BoolSeries",
     "SampledSeries",
     "BundleValue",
     "RosterValue",
@@ -133,6 +149,8 @@ __all__ = [
     "CoordinateFrame2",
     "WORLD_FRAME2",
     "Point2Value",
+    "Region2Value",
+    "FaceValue",
     "Point3Value",
     "PlaneValue",
     "LineValue",

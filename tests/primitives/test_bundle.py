@@ -288,3 +288,17 @@ def test_point3_bundle_algebra() -> None:
     masked = Point3Bundle.from_map({"a": Point3.at(0, 0, 0)}, roster=["a", "b"])
     other = Point3Bundle.from_map({"a": Point3.at(1, 0, 0)})
     assert masked.distance_to(other).resolve().support() == ("a",)
+
+
+def test_per_key_transformed_by_a_transform_bundle() -> None:
+    from fungeom import Scalar, Transform, TransformBundle, Vec3
+
+    cloud = Point3Bundle.from_array([[1, 0, 0], [0, 1, 0]], keys=["a", "b"])
+    poses = TransformBundle.of(
+        [Transform.translation((10, 0, 0)), Transform.rotation(Vec3.of(0, 0, 1), Scalar.of(np.pi / 2))], keys=["a", "b"]
+    )
+    moved = cloud.transformed_by(poses)  # each marker by its own joint's pose
+    assert np.allclose(moved.at("a").resolve().coord, [11, 0, 0])
+    assert np.allclose(moved.at("b").resolve().coord, [-1, 0, 0], atol=1e-9)  # rot90·(0,1,0)
+    # a single shared Transform still broadcasts (the overload)
+    assert np.allclose(cloud.transformed_by(Transform.translation((5, 0, 0))).at("a").resolve().coord, [6, 0, 0])

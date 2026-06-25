@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from fungeom.core.arrays import freeze
+from fungeom.primitives.vec2.value import Float2, as_vec2
 from fungeom.primitives.vec3.value import Float3, as_vec3
 
 
@@ -49,6 +50,32 @@ class PlaneValue:
         """The orthogonal projection of ``p`` onto the plane."""
         coord = as_vec3(p)
         return as_vec3(coord - self.signed_distance(coord) * self.normal)
+
+    def local_axes(self) -> tuple[Float3, Float3]:
+        """A deterministic right-handed in-plane basis ``(x, y)`` (with ``x × y = normal``).
+
+        The plane's intrinsic 2D chart. The gauge (rotation about the normal) is arbitrary
+        but fixed by the normal alone — crossing with the coordinate axis least aligned with
+        it — so :meth:`to_local` and :meth:`embed` are mutual inverses on the plane.
+        """
+        helper = np.zeros(3)
+        helper[int(np.argmin(np.abs(self.normal)))] = 1.0
+        x = np.cross(self.normal, helper)
+        x = x / float(np.linalg.norm(x))
+        y = np.cross(self.normal, x)
+        return as_vec3(x), as_vec3(y)
+
+    def to_local(self, p: Float3) -> Float2:
+        """The 2D coordinates of ``p`` in the plane's chart (orthogonally projected in-plane)."""
+        x, y = self.local_axes()
+        d = as_vec3(p) - self.point
+        return as_vec2((float(np.dot(d, x)), float(np.dot(d, y))))
+
+    def embed(self, uv: Float2) -> Float3:
+        """The world point at chart coordinates ``uv`` — the inverse of :meth:`to_local` on the plane."""
+        x, y = self.local_axes()
+        u, v = as_vec2(uv)
+        return as_vec3(self.point + u * x + v * y)
 
     def offset(self, distance: float) -> PlaneValue:
         """A parallel plane shifted ``distance`` along the normal."""

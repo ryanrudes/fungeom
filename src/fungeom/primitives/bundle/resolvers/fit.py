@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fungeom.core.resolvability import Resolvable, Unresolvable
+from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
 from fungeom.primitives.line.decidability import LineDecision
 from fungeom.primitives.line.resolvers.base import Line
@@ -21,6 +21,40 @@ from fungeom.primitives.line.value import LineValue
 from fungeom.primitives.plane.decidability import PlaneDecision
 from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.plane.value import PlaneValue
+
+
+def orient_plane_track(planes: list[PlaneValue]) -> list[PlaneValue]:
+    """Flip each plane's normal to agree with the previous one — a continuous normal track.
+
+    The per-frame SVD normal sign is arbitrary, so a fitted *moving* plane can flip sign between
+    frames and read as antipodal (breaking the slerp blend). This walks the track and negates any
+    normal opposed to its predecessor, so consecutive normals vary smoothly.
+    """
+    oriented: list[PlaneValue] = []
+    previous: np.ndarray | None = None
+    for plane in planes:
+        if previous is not None and float(np.dot(plane.normal, previous)) < 0.0:
+            plane = plane.flipped()
+        previous = plane.normal
+        oriented.append(plane)
+    return oriented
+
+
+def fit_plane_coords(points: np.ndarray, tolerance: float) -> Resolvability[PlaneValue]:
+    """The least-squares plane through ``points`` (an ``(N, 3)`` array) — the shared SVD kernel.
+
+    Unresolvable with fewer than three points, or when the normal direction is not unique (the
+    gap between the two smallest singular values is within ``tolerance`` of the cloud's scale).
+    The normal's sign is the SVD convention (arbitrary). Used both by :class:`FittedPlane` and,
+    per frame, by ``Point3BundleSignal.fit_plane``.
+    """
+    if points.shape[0] < 3:
+        return Unresolvable("a plane fit needs at least three present points")
+    centroid = points.mean(axis=0)
+    _, singular, right = np.linalg.svd(points - centroid, full_matrices=False)
+    if singular[1] - singular[2] <= tolerance * singular[0]:
+        return Unresolvable("the points have no unique normal direction (near-collinear or isotropic)")
+    return Resolvable(PlaneValue(point=centroid, normal=right[2]))
 
 
 @dataclass(frozen=True, eq=False)
@@ -43,13 +77,7 @@ class FittedPlane(Plane):
         match self.cloud.decide():
             case Resolvable(collection):
                 points = np.array([collection.members[key].coord for key in collection.support()])
-                if points.shape[0] < 3:
-                    return Unresolvable("a plane fit needs at least three present points")
-                centroid = points.mean(axis=0)
-                _, singular, right = np.linalg.svd(points - centroid, full_matrices=False)
-                if singular[1] - singular[2] <= self.tolerance * singular[0]:
-                    return Unresolvable("the points have no unique normal direction (near-collinear or isotropic)")
-                return Resolvable(PlaneValue(point=centroid, normal=right[2]))
+                return fit_plane_coords(points, self.tolerance)
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover

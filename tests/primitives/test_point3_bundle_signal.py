@@ -224,3 +224,40 @@ def test_key_refuses_non_default_reconstruction() -> None:
         decision = signal.key("M").decide()
         assert isinstance(decision, Unresolvable)
         assert "default reconstruction" in decision.reason
+
+
+def test_transformed_by_a_moving_pose() -> None:
+    from scipy.spatial.transform import Rotation
+
+    from fungeom import Point3BundleSignal, RigidTransform, TransformSignal, Unresolvable
+
+    poses = [
+        RigidTransform.from_rotation(Rotation.from_euler("z", a, degrees=True), [tx, 0, 0])
+        for a, tx in [(0, 0), (90, 10)]
+    ]
+    pose = TransformSignal.from_samples([0.0, 2.0], poses)
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 2.0], [[[1, 0, 0], [0, 1, 0]], [[1, 0, 0], [0, 1, 0]]], keys=["a", "b"]
+    )
+    world = cloud.transformed_by(pose)
+    assert np.allclose(world.at(2.0).at("a").resolve().coord, [10, 1, 0], atol=1e-9)  # rot90·(1,0,0)+(10,0,0)
+    assert np.allclose(world.at(2.0).at("b").resolve().coord, [9, 0, 0], atol=1e-9)  # rot90·(0,1,0)+(10,0,0)
+    assert isinstance(world.at(5.0).decide(), Unresolvable)  # off the pose's support
+
+
+def test_transformed_by_per_joint_poses() -> None:
+    from fungeom import Point3BundleSignal, Transform, TransformBundleSignal
+
+    times = [0.0, 2.0]
+    poses = TransformBundleSignal.from_frames(
+        times,
+        [
+            [Transform.translation((0, 0, 0)), Transform.translation((0, 0, 0))],
+            [Transform.translation((10, 0, 0)), Transform.translation((0, 10, 0))],
+        ],
+        keys=["a", "b"],
+    )
+    cloud = Point3BundleSignal.from_frames(times, [[[1, 0, 0], [0, 1, 0]], [[1, 0, 0], [0, 1, 0]]], keys=["a", "b"])
+    world = cloud.transformed_by(poses)  # each marker by its own joint's moving pose
+    assert np.allclose(world.at(2.0).at("a").resolve().coord, [11, 0, 0])
+    assert np.allclose(world.at(2.0).at("b").resolve().coord, [0, 11, 0])

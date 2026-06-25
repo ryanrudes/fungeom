@@ -200,3 +200,106 @@ def test_restrict_to_a_gappy_coverage() -> None:
     assert clipped.support().resolve() == CoverageValue((IntervalValue(0.0, 1.0), IntervalValue(3.0, 4.0)))
     assert clipped.at(0.5).resolve() == 5.0
     assert isinstance(clipped.at(2.0).decide(), Unresolvable)  # the carved-out middle
+
+
+def test_derivative_central_and_one_sided() -> None:
+    # f(t) = t² sampled on a uniform grid: central differences are exact for a quadratic
+    f = ScalarSignal.from_samples([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    d = f.derivative()
+    assert d.at(1.0).resolve() == 2.0  # central: (4 − 0) / 2
+    assert d.at(2.0).resolve() == 4.0  # central: (9 − 1) / 2
+    assert d.at(0.0).resolve() == 1.0  # forward at the left edge
+    assert d.at(3.0).resolve() == 5.0  # backward at the right edge
+    assert d.over().resolve() == IntervalValue(0.0, 3.0)
+
+
+def test_derivative_partiality_and_gaps() -> None:
+    assert isinstance(ScalarSignal.from_samples([0.0], [5.0]).derivative().decide(), Unresolvable)  # < 2 samples
+    # a dropout: the derivative is one-sided at each span edge and Unresolvable inside the gap
+    gapped = ScalarSignal.from_samples([0.0, 1.0, 5.0, 6.0], [0.0, 1.0, 5.0, 6.0], max_gap=2.0)
+    d = gapped.derivative()
+    assert d.at(1.0).resolve() == 1.0  # backward within the first span (not across the gap)
+    assert d.at(5.0).resolve() == 1.0  # forward within the second span
+    assert isinstance(d.at(3.0).decide(), Unresolvable)  # inside the gap
+
+
+def test_derivative_isolated_sample_is_unresolvable() -> None:
+    # the sample at t=0 is a single-frame island (a gap to the next run) — it has no velocity
+    isolated = ScalarSignal.from_samples([0.0, 5.0, 6.0], [0.0, 5.0, 6.0], max_gap=2.0)
+    decision = isolated.derivative().decide()
+    assert isinstance(decision, Unresolvable)
+    assert "isolated sample" in decision.reason
+
+
+def test_temporal_reductions_over_a_window() -> None:
+    # a triangle: 0 → 2 over [0,2], 2 → 0 over [2,4]
+    tri = ScalarSignal.from_samples([0.0, 2.0, 4.0], [0.0, 2.0, 0.0])
+    full = Interval.between(Instant.at(0.0), Instant.at(4.0))
+    assert tri.min_over(full).resolve() == 0.0
+    assert tri.max_over(full).resolve() == 2.0
+    assert tri.argmin_over(full).resolve() == 0.0  # first if tied
+    assert tri.argmax_over(full).resolve() == 2.0
+    assert tri.integral_over(full).resolve() == 4.0  # triangle area ½·4·2
+    assert tri.mean_over(full).resolve() == 1.0
+    # a sub-window with interpolated endpoints: v(1)=1, v(2)=2, v(3)=1
+    sub = Interval.between(Instant.at(1.0), Instant.at(3.0))
+    assert tri.min_over(sub).resolve() == 1.0
+    assert tri.integral_over(sub).resolve() == 3.0  # two trapezoids of 1.5
+    assert tri.mean_over(sub).resolve() == 1.5
+
+
+def test_reductions_over_a_gappy_coverage_window() -> None:
+    tri = ScalarSignal.from_samples([0.0, 2.0, 4.0], [0.0, 2.0, 0.0])
+    cov = Coverage.of(
+        [Interval.between(Instant.at(0.0), Instant.at(1.0)), Interval.between(Instant.at(3.0), Instant.at(4.0))]
+    )
+    assert tri.integral_over(cov).resolve() == 1.0  # two trapezoids of 0.5 (the [1,3] hump is excluded)
+    assert tri.max_over(cov).resolve() == 1.0  # the peak at t=2 is outside the window
+
+
+def test_reduction_partiality() -> None:
+    tri = ScalarSignal.from_samples([0.0, 2.0, 4.0], [0.0, 2.0, 0.0])
+    off = Interval.between(Instant.at(10.0), Instant.at(20.0))
+    assert isinstance(tri.min_over(off).decide(), Unresolvable)  # window misses the support
+    assert isinstance(tri.argmax_over(off).decide(), Unresolvable)
+    point = Interval.between(Instant.at(2.0), Instant.at(2.0))
+    assert tri.min_over(point).resolve() == 2.0  # a degenerate window still has a value…
+    assert isinstance(tri.mean_over(point).decide(), Unresolvable)  # …but no well-defined mean
+
+
+def test_map_is_the_unary_escape_hatch() -> None:
+    s = ScalarSignal.from_samples([0.0, 1.0, 2.0], [-1.0, 2.0, 5.0])
+    clamped = s.map(lambda x: x.clamp(0.0, 3.0))
+    assert clamped.at(1.0).resolve() == 2.0
+    assert clamped.at(2.0).resolve() == 3.0  # clamped to the upper bound
+    # the per-instant op's partiality flows: sqrt of the negative sample is Unresolvable
+    assert isinstance(s.map(lambda x: x.sqrt()).at(0.0).decide(), Unresolvable)
+
+
+def test_lift_combines_signals_of_any_type() -> None:
+    from fungeom import Vec3Signal
+
+    va = Vec3Signal.from_samples([0.0, 2.0], [[1, 0, 0], [1, 0, 0]])
+    vb = Vec3Signal.from_samples([0.0, 2.0], [[0, 1, 0], [1, 0, 0]])
+    dot = ScalarSignal.lift([va, vb], lambda a, b: a.dot(b))  # two Vec3Signals → a ScalarSignal
+    assert dot.at(0.0).resolve() == 0.0
+    assert dot.at(2.0).resolve() == 1.0
+    norm = ScalarSignal.lift([va], lambda v: v.norm())  # the single-source (map) case
+    assert norm.at(0.0).resolve() == 1.0
+    # the result is defined only where all sources overlap
+    far = ScalarSignal.from_samples([10.0, 11.0], [1.0, 2.0])
+    near = ScalarSignal.from_samples([0.0, 1.0], [1.0, 2.0])
+    assert isinstance(ScalarSignal.lift([near, far], lambda a, b: a + b).decide(), Unresolvable)
+
+
+def test_constant_offset_scale() -> None:
+    span = Interval.between(Instant.at(0.0), Instant.at(5.0))
+    c = ScalarSignal.constant(3.0, span)
+    assert c.at(2.0).resolve() == 3.0
+    assert c.over().resolve() == IntervalValue(0.0, 5.0)
+    # a degenerate (point) span gives a single-sample constant
+    point = Interval.between(Instant.at(3.0), Instant.at(3.0))
+    assert ScalarSignal.constant(7.0, point).at(3.0).resolve() == 7.0
+    s = ScalarSignal.from_samples([0.0, 2.0], [0.0, 10.0])
+    assert s.offset(100.0).at(1.0).resolve() == 105.0
+    assert s.scale(2.0).at(1.0).resolve() == 10.0

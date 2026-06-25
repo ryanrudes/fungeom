@@ -28,6 +28,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
+import numpy as np
+
 from fungeom.core.arrays import freeze
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.core.resolver import Resolver
@@ -154,6 +156,10 @@ class Signal[V](Resolver[SampledSeries[V]]):
         dropout, even though the instant lies within the outer hull.
         """
         return self.support().contains(instant)
+
+    def at(self, instant: Instant | float) -> Resolver[V]:
+        """The value at ``instant`` (→ this signal's primitive). Each facade overrides with its rich type."""
+        raise NotImplementedError  # pragma: no cover  (every facade defines its own ``at``)
 
 
 @dataclass(frozen=True, eq=False)
@@ -350,6 +356,74 @@ def decide_warped[V](source: Signal[V], by: TimeWarp) -> Resolvability[SampledSe
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+def decide_signal_map[V, U](
+    source: Signal[V],
+    value_fn: Callable[[V], U],
+    blend: Blend[U],
+) -> Resolvability[SampledSeries[U]]:
+    """Map a *total* per-sample function over a signal, preserving its time base and support.
+
+    The unary companion to :func:`decide_lifted`: ``value_fn`` rewrites each sample value (e.g.
+    a vector to its norm) with no partiality of its own, so the result is sampled at the same
+    instants over the same support, read linearly. For partial or cross-signal maps, build via
+    ``at`` + :func:`decide_lifted` instead.
+    """
+    match source.decide():
+        case Resolvable(series):
+            mapped = tuple(value_fn(value) for value in series.values)
+            return Resolvable(
+                SampledSeries(series.times, mapped, Interpolation.linear, Boundary.undefined, blend, series.support)
+            )
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def decide_derivative[V, U](
+    source: Signal[V],
+    slope: Callable[[V, V, float], U],
+    blend: Blend[U],
+) -> Resolvability[SampledSeries[U]]:
+    """The finite-difference derivative of a signal on its own sample grid (exact, not smoothed).
+
+    Central differences in each support span's interior, one-sided at its edges; **never**
+    differenced across a gap (consecutive samples a dropout apart are not connected). ``slope(v_a,
+    v_b, dt)`` produces the derivative value from the two bracketing samples and the elapsed time.
+    The result is sampled at the same instants over the same support, read linearly. Unresolvable
+    with fewer than two samples, or at an *isolated* sample (one with no same-span neighbour — a
+    single-frame island has no velocity). Smoothing derivatives (Savitzky–Golay) stay parked.
+    """
+    match source.decide():
+        case Resolvable(series):
+            times, values = series.times, series.values
+            n = len(times)
+            if n < 2:
+                return Unresolvable("a derivative needs at least two samples")
+            spans = series.support.intervals
+
+            def connected(i: int, j: int) -> bool:
+                return any(span.start <= float(times[i]) and float(times[j]) <= span.end for span in spans)
+
+            out: list[U] = []
+            for i in range(n):
+                left = i > 0 and connected(i - 1, i)
+                right = i < n - 1 and connected(i, i + 1)
+                if left and right:
+                    out.append(slope(values[i - 1], values[i + 1], float(times[i + 1]) - float(times[i - 1])))
+                elif right:
+                    out.append(slope(values[i], values[i + 1], float(times[i + 1]) - float(times[i])))
+                elif left:
+                    out.append(slope(values[i - 1], values[i], float(times[i]) - float(times[i - 1])))
+                else:
+                    return Unresolvable(f"cannot differentiate across an isolated sample at t={float(times[i]):g}s")
+            return Resolvable(
+                SampledSeries(times, tuple(out), Interpolation.linear, Boundary.undefined, blend, series.support)
+            )
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def _union_times_in_support(a: TimeSeries, b: TimeSeries, support: CoverageValue) -> list[float]:
     """The sorted, de-duplicated sample instants of both signals that fall in ``support``."""
     spans = support.intervals
@@ -384,6 +458,76 @@ def decide_lifted[U](
         return Unresolvable("the two signals' supports do not overlap")
     support = CoverageValue(kept)
     times = _union_times_in_support(decided_a.value.times, decided_b.value.times, support)
+    out: list[U] = []
+    for t in times:
+        point = at_combined(t).decide()
+        if isinstance(point, Unresolvable):
+            return point
+        out.append(point.value)
+    return Resolvable(
+        SampledSeries(as_times(times), tuple(out), Interpolation.linear, Boundary.undefined, blend, support)
+    )
+
+
+def resolved_rows[V](resampled: Signal[V], to_row: Callable[[V], Any]) -> np.ndarray:
+    """Resolve a (resampled) signal to a stacked ``ndarray`` — the sanctioned vectorized readback.
+
+    The deliberate exit from the lazy graph into numpy: it *resolves eagerly* (raising
+    ``UnresolvableError`` if any target is off the support), then stacks each sample through
+    ``to_row``. ``Signal.resolve_over(Sampling)`` is the public form.
+    """
+    series = resampled.resolve()
+    return np.array([to_row(value) for value in series.values])
+
+
+def resolved_grid(resampled: Signal[Any], to_row: Callable[[Any], Any], fill: Any) -> tuple[np.ndarray, np.ndarray]:
+    """Resolve a (resampled) bundle signal to a dense ``(T, N, ·)`` array plus a ``(T, N)`` present mask.
+
+    Columns follow the first frame's roster; an absent (occluded) cell holds ``fill`` and its mask
+    entry is ``False``. Resolves eagerly (raising if any frame is off the support).
+    """
+    frames = resampled.resolve().values
+    roster = frames[0].roster
+    rows: list[list[Any]] = []
+    masks: list[list[bool]] = []
+    for frame in frames:
+        present, mask_row = [], []
+        for key in roster:
+            here = frame.present(key)
+            present.append(to_row(frame.members[key]) if here else fill)
+            mask_row.append(here)
+        rows.append(present)
+        masks.append(mask_row)
+    return np.array(rows), np.array(masks, dtype=bool)
+
+
+def decide_lifted_n[U](
+    sources: tuple[Signal[Any], ...],
+    at_combined: Callable[[float], Resolver[U]],
+    blend: Blend[U],
+) -> Resolvability[SampledSeries[U]]:
+    """The N-ary general lift — the open escape hatch for combining any signals over time.
+
+    The generalization of :func:`decide_lifted` to any number of sources (including one — a
+    map). They are aligned on the *union* of all sample instants, clipped to the *intersection*
+    of all supports; ``at_combined(t)`` builds the per-instant result as an ordinary resolver, so
+    its partiality flows through. Unresolvable if any source is, if the supports do not all
+    overlap, or if any aligned combination is. ``sources`` must be non-empty.
+    """
+    decided = []
+    for source in sources:
+        outcome = source.decide()
+        if isinstance(outcome, Unresolvable):
+            return outcome
+        decided.append(outcome.value)
+    spans = decided[0].support.intervals
+    for series in decided[1:]:
+        spans = intersect(spans, series.support.intervals)
+    if not spans:
+        return Unresolvable("the signals' supports do not all overlap")
+    support = CoverageValue(spans)
+    merged = sorted({float(t) for series in decided for t in series.times})
+    times = [t for t in merged if any(span.start <= t <= span.end for span in spans)]
     out: list[U] = []
     for t in times:
         point = at_combined(t).decide()

@@ -20,6 +20,7 @@ from fungeom.primitives.bundle.resolvers.base import (
     decide_where,
 )
 from fungeom.primitives.bundle.value import BundleValue
+from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.transform.decidability import RigidTransformDecision
 from fungeom.primitives.transform.resolvers.base import Transform
@@ -61,9 +62,9 @@ class TransformBundle(Bundle[RigidTransform]):
         """The transform for ``key`` (→ ``Transform``); Unresolvable if absent or unknown."""
         return _TransformBundleAt(bundle=self, key=key)
 
-    def where(self, keys: Sequence[Hashable]) -> TransformBundle:
+    def where(self, keys: Sequence[Hashable] | Roster) -> TransformBundle:
         """The sub-bundle restricted to ``keys``."""
-        return _WhereTransformBundle(source=self, keep=tuple(keys))
+        return _WhereTransformBundle(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
 
     def relabel(self, mapping: RosterMap) -> TransformBundle:
         """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
@@ -83,7 +84,7 @@ class _GatheredTransformBundle(TransformBundle):
 @dataclass(frozen=True, eq=False)
 class _WhereTransformBundle(TransformBundle):
     source: TransformBundle
-    keep: tuple[Hashable, ...]
+    keep: tuple[Hashable, ...] | Roster
 
     def _decide(self) -> BundleDecision[RigidTransform]:
         return decide_where(self.source, self.keep)

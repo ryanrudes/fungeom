@@ -37,6 +37,18 @@ def test_dot_and_cross() -> None:
     assert np.allclose(x.cross(y).resolve().vector, [0, 0, 1])
 
 
+def test_signed_angle_to_about_an_axis() -> None:
+    x, y = Direction3.of(1, 0, 0), Direction3.of(0, 1, 0)
+    z = Direction3.of(0, 0, 1)
+    # x → y is a right-handed +90° about +z, and −90° about −z (the sign tracks the axis)
+    assert np.isclose(np.degrees(x.signed_angle_to(y, about=z).resolve()), 90.0)
+    assert np.isclose(np.degrees(x.signed_angle_to(y, about=z.reversed()).resolve()), -90.0)
+    assert np.isclose(x.signed_angle_to(x, about=z).resolve(), 0.0)
+    # a direction parallel to the axis has no in-plane component to measure
+    assert isinstance(z.signed_angle_to(y, about=z).decide(), Unresolvable)
+    assert isinstance(x.signed_angle_to(z, about=z).decide(), Unresolvable)
+
+
 def test_slerp_antipodal_is_unresolvable() -> None:
     assert isinstance(Direction3.of(1, 0, 0).slerp(Direction3.of(-1, 0, 0), 0.5).decide(), Unresolvable)
 

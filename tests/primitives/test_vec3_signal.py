@@ -86,3 +86,38 @@ def test_reparameterize_by_warp() -> None:
     bent = sig.reparameterize(warp)
     assert bent.over().resolve() == IntervalValue(0.0, 2.0)
     assert bent.at(2.0).resolve().tolist() == [2.0, 20.0, -2.0]
+
+
+def test_derivative_and_norm() -> None:
+    import numpy as np
+
+    v = Vec3Signal.from_samples([0.0, 1.0, 2.0], [[0, 0, 0], [3, 4, 0], [6, 8, 0]])
+    assert np.allclose(v.derivative().at(1.0).resolve(), [3, 4, 0])  # central difference
+    assert v.norm().at(1.0).resolve() == 5.0  # |(3, 4, 0)|
+    assert isinstance(Vec3Signal.from_samples([0.0], [[1, 1, 1]]).derivative().decide(), Unresolvable)
+
+
+def test_transformed_by_rotates_a_free_vector() -> None:
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+
+    from fungeom import RigidTransform, TransformSignal
+
+    # a pose with a translation: the free vector ignores it (rotation only)
+    poses = [RigidTransform.from_rotation(Rotation.from_euler("z", a, degrees=True), [99, 0, 0]) for a in (0, 90)]
+    pose = TransformSignal.from_samples([0.0, 2.0], poses)
+    v = Vec3Signal.from_samples([0.0, 2.0], [[1, 0, 0], [1, 0, 0]])
+    assert np.allclose(v.transformed_by(pose).at(2.0).resolve(), [0, 1, 0], atol=1e-9)
+
+
+def test_lift_and_map() -> None:
+    import numpy as np
+
+    from fungeom import Point3Signal
+
+    pa = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 0], [0, 0, 0]])
+    pb = Point3Signal.from_samples([0.0, 2.0], [[3, 4, 0], [6, 8, 0]])
+    disp = Vec3Signal.lift([pa, pb], lambda a, b: a.displacement_to(b))  # two Point3Signals → a Vec3Signal
+    assert np.allclose(disp.at(2.0).resolve(), [6, 8, 0])
+    scaled = Vec3Signal.from_samples([0.0, 2.0], [[1, 0, 0], [1, 0, 0]]).map(lambda v: v.scale(3.0))
+    assert np.allclose(scaled.at(0.0).resolve(), [3, 0, 0])

@@ -8,8 +8,11 @@ componentwise linear (a flat space, so total); only value parsing and the rich
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable
@@ -24,12 +27,16 @@ from fungeom.primitives.signals.scalar import SCALAR_BLEND, ScalarSignal
 from fungeom.primitives.signals.series import (
     SampledSeries,
     Signal,
+    decide_derivative,
     decide_lifted,
+    decide_lifted_n,
     decide_reparameterized,
     decide_resampled,
     decide_restricted,
     decide_sample,
+    resolved_rows,
     decide_sampled,
+    decide_signal_map,
     decide_warped,
 )
 from fungeom.primitives.timemap.resolvers.base import TimeMap
@@ -38,6 +45,9 @@ from fungeom.primitives.timewarp.resolvers.base import TimeWarp
 from fungeom.primitives.vec3.decidability import Vec3Decision
 from fungeom.primitives.vec3.resolvers.base import Vec3
 from fungeom.primitives.vec3.value import Float3, as_vec3
+
+if TYPE_CHECKING:
+    from fungeom.primitives.signals.transform import TransformSignal
 
 
 class _Vec3Blend:
@@ -93,6 +103,20 @@ class Vec3Signal(Signal[Float3]):
         """A signal sampled at explicit ``times`` (sugar over :meth:`sampled`)."""
         return cls.sampled(Sampling.at_times(times), values, via=via, outside=outside, max_gap=max_gap)
 
+    @classmethod
+    def lift(cls, sources: Sequence[Signal[Any]], combine: Callable[..., Vec3]) -> Vec3Signal:
+        """Build a vector signal by combining ``sources`` per instant (the general escape hatch).
+
+        ``combine`` receives each source's value-at-``t`` *resolver* positionally and returns a
+        ``Vec3`` (e.g. ``Vec3Signal.lift([pa, pb], lambda a, b: a.displacement_to(b))``). Aligned
+        on the union of instants ∩ intersection of supports; per-instant partiality flows.
+        """
+        return _LiftedVec3Signal(sources=tuple(sources), combine=combine)
+
+    def map(self, transform: Callable[[Vec3], Vec3]) -> Vec3Signal:
+        """Apply ``transform`` to this signal's value at each instant (→ ``Vec3Signal``; the unary lift)."""
+        return _LiftedVec3Signal(sources=(self,), combine=transform)
+
     def at(self, instant: Instant | float) -> Vec3:
         """The value of this signal at ``instant`` (Unresolvable outside its domain)."""
         from fungeom.primitives.instant.resolvers.literal import as_instant_resolver
@@ -120,6 +144,14 @@ class Vec3Signal(Signal[Float3]):
         """This signal translated in time by ``by`` (sugar for ``reparameterize(TimeMap.shift(by))``)."""
         return self.reparameterize(TimeMap.shift(by))
 
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        """Resample onto ``onto`` and resolve to a raw ``(T, 3) array`` — the vectorized readback.
+
+        The sanctioned exit into numpy; resolves eagerly (raises ``UnresolvableError`` if a
+        target is off the support).
+        """
+        return resolved_rows(self.resample(onto), lambda value: value)
+
     def __add__(self, other: Vec3Signal) -> Vec3Signal:
         """Pointwise sum with ``other``, time-aligned on the union of their samples."""
         return _SumVec3Signal(a=self, b=other)
@@ -131,6 +163,22 @@ class Vec3Signal(Signal[Float3]):
     def dot(self, other: Vec3Signal) -> ScalarSignal:
         """Pointwise dot product with ``other`` over time (→ ``ScalarSignal``), time-aligned."""
         return _DotScalarSignal(a=self, b=other)
+
+    def norm(self) -> ScalarSignal:
+        """The per-sample magnitude over time (→ ``ScalarSignal``; total)."""
+        return _NormScalarSignal(source=self)
+
+    def derivative(self) -> Vec3Signal:
+        """The finite-difference time derivative (→ ``Vec3Signal``; Unresolvable with < 2 samples)."""
+        return _DerivativeVec3Signal(source=self)
+
+    def transformed_by(self, pose: TransformSignal) -> Vec3Signal:
+        """This free vector rotated by a moving ``pose`` over time (→ ``Vec3Signal``; rotation only).
+
+        The transport lift for a *free* vector — the pose's rotation is applied, its translation
+        ignored (time-aligned ∩ supports; off the pose's support → ``Unresolvable``).
+        """
+        return _TransformedVec3Signal(a=self, pose=pose)
 
 
 @dataclass(frozen=True, eq=False)
@@ -201,6 +249,46 @@ class _DotScalarSignal(ScalarSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[float]]:
         return decide_lifted(self.a, self.b, lambda t: self.a.at(t).dot(self.b.at(t)), SCALAR_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _NormScalarSignal(ScalarSignal):
+    """The per-sample magnitude of a vector signal — a ``ScalarSignal``."""
+
+    source: Vec3Signal
+
+    def _decide(self) -> Resolvability[SampledSeries[float]]:
+        return decide_signal_map(self.source, lambda v: float(np.linalg.norm(v)), SCALAR_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _DerivativeVec3Signal(Vec3Signal):
+    source: Vec3Signal
+
+    def _decide(self) -> Resolvability[SampledSeries[Float3]]:
+        return decide_derivative(self.source, lambda a, b, dt: as_vec3((b - a) / dt), VEC3_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _TransformedVec3Signal(Vec3Signal):
+    """A free vector rotated by a moving pose over time — the transport lift."""
+
+    a: Vec3Signal
+    pose: TransformSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[Float3]]:
+        return decide_lifted(self.a, self.pose, lambda t: self.pose.at(t).transform_vector(self.a.at(t)), VEC3_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _LiftedVec3Signal(Vec3Signal):
+    """A vector signal built by combining N sources per instant — the general lift / map."""
+
+    sources: tuple[Signal[Any], ...]
+    combine: Callable[..., Vec3]
+
+    def _decide(self) -> Resolvability[SampledSeries[Float3]]:
+        return decide_lifted_n(self.sources, lambda t: self.combine(*(s.at(t) for s in self.sources)), VEC3_BLEND)
 
 
 @dataclass(frozen=True, eq=False)

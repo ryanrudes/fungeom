@@ -12,8 +12,11 @@ place this type needs its own ``decide`` is the grounding pass.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
 
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable, gather
@@ -32,14 +35,18 @@ from fungeom.primitives.signals.scalar import SCALAR_BLEND, ScalarSignal
 from fungeom.primitives.signals.series import (
     SampledSeries,
     Signal,
+    decide_derivative,
     decide_lifted,
+    decide_lifted_n,
     decide_reparameterized,
     decide_resampled,
     decide_restricted,
     decide_sample,
+    resolved_rows,
     decide_warped,
     support_from_times,
 )
+from fungeom.primitives.signals.transform import TransformSignal
 from fungeom.primitives.signals.vec3 import VEC3_BLEND, Vec3Signal
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
@@ -133,6 +140,14 @@ class Point3Signal(Signal[Point3Value]):
         """This signal translated in time by ``by`` (sugar for ``reparameterize(TimeMap.shift(by))``)."""
         return self.reparameterize(TimeMap.shift(by))
 
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        """Resample onto ``onto`` and resolve to a raw ``(T, 3) array`` — the vectorized readback.
+
+        The sanctioned exit into numpy; resolves eagerly (raises ``UnresolvableError`` if a
+        target is off the support).
+        """
+        return resolved_rows(self.resample(onto), lambda value: value.coord)
+
     def displacement_to(self, other: Point3Signal) -> Vec3Signal:
         """The vector from this trajectory to ``other`` over time (→ ``Vec3Signal``), time-aligned."""
         return _DisplacementVec3Signal(a=self, b=other)
@@ -140,6 +155,36 @@ class Point3Signal(Signal[Point3Value]):
     def distance_to(self, other: Point3Signal) -> ScalarSignal:
         """The distance between this trajectory and ``other`` over time (→ ``ScalarSignal``), time-aligned."""
         return _DistanceScalarSignal(a=self, b=other)
+
+    def velocity(self) -> Vec3Signal:
+        """The finite-difference velocity — the time derivative of position (→ ``Vec3Signal``).
+
+        Exact central differences on the sample grid; Unresolvable with fewer than two samples.
+        """
+        return _VelocityVec3Signal(source=self)
+
+    def speed(self) -> ScalarSignal:
+        """The instantaneous speed over time — ``velocity().norm()`` (→ ``ScalarSignal``)."""
+        return self.velocity().norm()
+
+    @classmethod
+    def lift(cls, sources: Sequence[Signal[Any]], combine: Callable[..., Point3]) -> Point3Signal:
+        """Build a position signal by combining ``sources`` per instant (the general escape hatch)."""
+        return _LiftedPoint3Signal(sources=tuple(sources), combine=combine)
+
+    def map(self, transform: Callable[[Point3], Point3]) -> Point3Signal:
+        """Apply ``transform`` to this trajectory at each instant (→ ``Point3Signal``; the unary lift)."""
+        return _LiftedPoint3Signal(sources=(self,), combine=transform)
+
+    def transformed_by(self, pose: TransformSignal) -> Point3Signal:
+        """This trajectory carried through a moving ``pose`` over time (→ ``Point3Signal``).
+
+        The transport lift: each instant's point is rigidly moved by that instant's pose
+        (time-aligned on the union of their samples ∩ supports). Defined only where *both* are —
+        off the pose's support or an ungrounded point is ``Unresolvable``. This is how a marker
+        fixed in a moving body frame becomes a world trajectory.
+        """
+        return _TransformedPoint3Signal(a=self, pose=pose)
 
 
 @dataclass(frozen=True, eq=False)
@@ -213,6 +258,38 @@ class _DisplacementVec3Signal(Vec3Signal):
 
     def _decide(self) -> Resolvability[SampledSeries[Float3]]:
         return decide_lifted(self.a, self.b, lambda t: self.a.at(t).displacement_to(self.b.at(t)), VEC3_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _TransformedPoint3Signal(Point3Signal):
+    """A point trajectory carried through a moving pose over time — the transport lift."""
+
+    a: Point3Signal
+    pose: TransformSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[Point3Value]]:
+        return decide_lifted(self.a, self.pose, lambda t: self.a.at(t).transformed_by(self.pose.at(t)), POINT3_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _LiftedPoint3Signal(Point3Signal):
+    """A position signal built by combining N sources per instant — the general lift / map."""
+
+    sources: tuple[Signal[Any], ...]
+    combine: Callable[..., Point3]
+
+    def _decide(self) -> Resolvability[SampledSeries[Point3Value]]:
+        return decide_lifted_n(self.sources, lambda t: self.combine(*(s.at(t) for s in self.sources)), POINT3_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _VelocityVec3Signal(Vec3Signal):
+    """The finite-difference velocity of a position trajectory — a ``Vec3Signal``."""
+
+    source: Point3Signal
+
+    def _decide(self) -> Resolvability[SampledSeries[Float3]]:
+        return decide_derivative(self.source, lambda a, b, dt: as_vec3((b.coord - a.coord) / dt), VEC3_BLEND)
 
 
 @dataclass(frozen=True, eq=False)
