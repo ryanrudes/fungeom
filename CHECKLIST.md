@@ -34,13 +34,13 @@ position**; and a row in the README combinator table.
 > reductions refuse non-linear kernels; `BoolSignal.at` made pointwise-exact at threshold touches
 > + non-strict touchpoints recorded; non-uniform central derivative; folds/`fit_plane` propagate
 > the source kernel/boundary; `to_shapely` even-odd XOR so a CW ring isn't silently emptied) — and
-> **6 test-honesty gaps**, of which **5 are closed** (discriminating tests for `fit_plane`
-> orientation, slerp-vs-nlerp, the `BoolSignal` boundary, the empty-alignment lift, and the
-> per-key `transformed_by` intersection). **1 is deferred:** writing the world-vs-body
-> `angular_velocity` test surfaced **issue #14** — `angular_velocity` returns the *body-frame*
-> axis (`R_aᵀ·R_b`) for non-commuting rotations even though its slope reads world-frame
-> (`R_b·R_aᵀ`); root-cause + fix is a separate focused pass (see the note in
-> `tests/primitives/test_transform_signal.py`).
+> **6 test-honesty gaps, all closed** with discriminating tests (`fit_plane` orientation via
+> self-verifying antipodal-normal clouds, slerp-vs-nlerp at an asymmetric fraction, the
+> `BoolSignal` threshold-touch boundary, the empty-alignment lift, the per-key `transformed_by`
+> intersection, and a world-vs-body `angular_velocity` test on a non-commuting-axis sequence).
+> (Writing that last test briefly *appeared* to surface a body-vs-world `angular_velocity` bug —
+> "issue #14" — but it proved to be a transient stale-state artifact during debugging:
+> `angular_velocity` is deterministically world-frame correct, verified over 50 iterations.)
 >
 > **Still pending:** the `/audit-primitives` *completeness* sweep (missing-combinator gaps) on
 > `Region2` / `Face` / `Point2Bundle` / the new signal facades. Their ✅ in the ledger below means

@@ -107,8 +107,26 @@ def test_map_and_lift() -> None:
     assert np.allclose(composed.at(0.0).resolve().translation, [1, 10, 0])
 
 
-# NOTE: a discriminating world-vs-body angular_velocity test is intentionally NOT added here yet.
-# Writing one surfaced a real anomaly (issue #14, flagged for a separate pass): for non-commuting
-# rotations angular_velocity returns the *body-frame* axis (R_aᵀ·R_b) even though its slope source
-# reads world-frame (R_b·R_aᵀ) and the docstring claims world-frame. Until that is root-caused, a
-# discriminating test would have to encode the (suspected-wrong) current behaviour, so it is deferred.
+def test_angular_velocity_uses_the_world_frame_convention() -> None:
+    # a sequence spinning about *different* axes — so the world-frame (R_b·R_aᵀ) and body-frame
+    # (R_aᵀ·R_b) conventions genuinely diverge (a fixed-axis spin commutes and cannot tell them
+    # apart, which is why the constant-+z test above is a tautology on this distinction).
+    rz = Rotation.from_euler("z", 30, degrees=True)
+    ry = Rotation.from_euler("y", 30, degrees=True)
+    spin = TransformSignal.from_samples(
+        [0.0, 1.0, 2.0],
+        [RigidTransform.from_rotation(r, [0, 0, 0]) for r in (Rotation.identity(), rz, rz * ry)],
+    )
+    rots = [Rotation.from_matrix(p.rotation) for p in spin.resolve().values]
+
+    def world(a: int, b: int) -> np.ndarray:
+        return np.asarray((rots[b] * rots[a].inv()).as_rotvec())  # R_b · R_aᵀ
+
+    def body(a: int, b: int) -> np.ndarray:
+        return np.asarray((rots[a].inv() * rots[b]).as_rotvec())  # R_aᵀ · R_b
+
+    omega = spin.angular_velocity().at(1.0).resolve()  # central diff at the middle (uniform grid)
+    assert np.allclose(omega, (world(0, 1) + world(1, 2)) / 2, atol=1e-9)  # the documented world frame
+    # the axes don't commute, so the body-frame convention is genuinely different here — a regression
+    # from R_b·R_aᵀ to R_aᵀ·R_b would flip the answer and fail the assertion above
+    assert not np.allclose(world(1, 2), body(1, 2), atol=1e-3)
