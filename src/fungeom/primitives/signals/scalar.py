@@ -100,6 +100,14 @@ def decide_windowed(signal: ScalarSignal, window: Coverage) -> Resolvability[lis
         return decided_signal
     if isinstance(decided_window, Unresolvable):
         return decided_window
+    if decided_signal.value.interpolation is not Interpolation.linear:
+        # The breakpoint math (trapezoid integral, extrema at corners) is exact only for the
+        # piecewise-*linear* interpolant. Rather than silently reduce a hold/nearest signal as if
+        # it were linear (disagreeing with at()), we refuse — the same stance as decide_distributed.
+        return Unresolvable(
+            "a windowed reduction requires linear interpolation (the breakpoint math is exact only "
+            "for the piecewise-linear interpolant; a hold/nearest signal would reduce wrong)"
+        )
     runs = windowed_breakpoints(decided_signal.value, decided_window.value.intervals)
     if not runs:
         return Unresolvable("the window does not overlap the signal's support")

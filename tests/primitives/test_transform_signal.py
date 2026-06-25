@@ -105,3 +105,10 @@ def test_map_and_lift() -> None:
     assert np.allclose(inv.at(0.0).resolve().translation, [-1, 0, 0])
     composed = TransformSignal.lift([spin], lambda x: x.compose(Transform.translation((0, 10, 0))))
     assert np.allclose(composed.at(0.0).resolve().translation, [1, 10, 0])
+
+
+# NOTE: a discriminating world-vs-body angular_velocity test is intentionally NOT added here yet.
+# Writing one surfaced a real anomaly (issue #14, flagged for a separate pass): for non-commuting
+# rotations angular_velocity returns the *body-frame* axis (R_aᵀ·R_b) even though its slope source
+# reads world-frame (R_b·R_aᵀ) and the docstring claims world-frame. Until that is root-caused, a
+# discriminating test would have to encode the (suspected-wrong) current behaviour, so it is deferred.

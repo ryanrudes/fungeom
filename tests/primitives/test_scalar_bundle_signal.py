@@ -95,3 +95,15 @@ def test_inherited_time_ops() -> None:
     assert clear.reparameterize(TimeMap.identity()).min().at(1.0).resolve() == 0.0  # affine path
     warped = clear.reparameterize(TimeWarp.through([(0.0, 0.0), (2.0, 4.0)]))  # warp path
     assert warped.over().resolve() == IntervalValue(0.0, 4.0)
+
+
+def test_folds_propagate_the_source_kernel_and_boundary() -> None:
+    from fungeom.primitives.signals.boundary import Boundary
+    from fungeom.primitives.signals.interpolation import Interpolation
+
+    # a hold-reconstructed cloud: the fold must read the same way the source does (not snap to linear)
+    held = ScalarBundleSignal.from_frames([0.0, 2.0], [[0.0], [10.0]], keys=["a"], via=Interpolation.hold)
+    assert held.min().at(1.0).resolve() == held.at(1.0).min().resolve() == 0.0  # held, not linear's 5.0
+    # a hold *boundary*: the fold must not shrink the domain (it used to drop the boundary → Unresolvable)
+    bounded = ScalarBundleSignal.from_frames([0.0, 2.0], [[0.0], [10.0]], keys=["a"], outside=Boundary.hold)
+    assert bounded.min().at(3.0).resolve() == bounded.at(3.0).min().resolve() == 10.0

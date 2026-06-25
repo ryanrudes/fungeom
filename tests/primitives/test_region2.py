@@ -276,3 +276,16 @@ def test_propagation_through_a_plane_bridge() -> None:
     region = Region2.hull(cloud)
     embedded = plane.embed(region.centroid()).resolve()
     assert np.isclose(embedded.coord[2], 3.0)  # the region centroid lifts back onto the plane
+
+
+def test_clockwise_wound_region_is_not_silently_emptied() -> None:
+    # a geometrically valid region whose outer ring happens to be wound clockwise must not silently
+    # convert to empty through the shapely bridge — the even-odd fill is orientation-independent
+    import numpy as np
+
+    from fungeom.primitives.region2.shapely_bridge import from_shapely, to_shapely
+
+    cw_square = Region2Value(rings=(np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float),))  # clockwise
+    assert np.isclose(cw_square.area(), 1.0)  # the value type already reports it as a unit square
+    assert np.isclose(to_shapely(cw_square).area, 1.0)  # …and the bridge agrees (was 0.0 / empty)
+    assert not from_shapely(to_shapely(cw_square)).is_empty

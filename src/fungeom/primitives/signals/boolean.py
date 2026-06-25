@@ -26,7 +26,7 @@ from fungeom.primitives.coverage.value import CoverageValue, intersect, subtract
 from fungeom.primitives.instant.decidability import InstantDecision
 from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.interval.value import IntervalValue
-from fungeom.primitives.signals.scalar import ScalarSignal
+from fungeom.primitives.signals.scalar import ScalarSignal, _lerp_at
 from fungeom.primitives.signals.series import SampledSeries
 
 
@@ -42,12 +42,6 @@ class BoolSeries:
     support: CoverageValue
     true: CoverageValue
 
-    def holds_at(self, t: float) -> bool | None:
-        """``True`` / ``False`` where defined, ``None`` (undefined) outside the support."""
-        if not _contains(self.support, t):
-            return None
-        return _contains(self.true, t)
-
     def __repr__(self) -> str:
         return f"BoolSeries(true over {self.true}, defined over {self.support})"
 
@@ -61,8 +55,11 @@ def threshold_true(series: SampledSeries[float], threshold: float, satisfies: Ca
     """The spans where ``series``' linear interpolant satisfies ``satisfies`` — exact crossings.
 
     Each segment between same-span samples is split at its exact threshold crossing; the open
-    sub-pieces are classified by their midpoint. A fully-isolated sample contributes a
-    degenerate point when it satisfies. Never crosses a gap.
+    sub-pieces are classified by their midpoint. A sample that *itself* satisfies the predicate
+    but lies in no satisfying open piece — a fully-isolated sample, or an interior tent/valley
+    vertex that merely *touches* the threshold under a non-strict predicate — contributes a
+    degenerate point, so the true-set is consistent with the pointwise predicate at that instant.
+    Never crosses a gap.
     """
     times, values = series.times, series.values
     spans = series.support.intervals
@@ -86,9 +83,14 @@ def threshold_true(series: SampledSeries[float], threshold: float, satisfies: Ca
             if satisfies(v0 + 0.5 * (a + b) * (v1 - v0)):
                 intervals.append(IntervalValue(start=t0 + a * (t1 - t0), end=t0 + b * (t1 - t0)))
     for i in range(n):
-        isolated = not (i > 0 and connected(i - 1, i)) and not (i < n - 1 and connected(i, i + 1))
-        if isolated and satisfies(float(values[i])):
-            intervals.append(IntervalValue(start=float(times[i]), end=float(times[i])))
+        # A sample that satisfies but sits in no recorded span: an isolated sample, or an interior
+        # vertex that only *touches* the threshold (both neighbouring open pieces fail — e.g. a
+        # valley grazing ``le``). Record it as a degenerate point so ``when_true`` agrees with the
+        # pointwise predicate at that instant. A *strict* crossing has ``satisfies(threshold) ==
+        # False``, so it is correctly not recorded.
+        t_i = float(times[i])
+        if satisfies(float(values[i])) and not any(span.start <= t_i <= span.end for span in intervals):
+            intervals.append(IntervalValue(start=t_i, end=t_i))
     return CoverageValue(tuple(intervals))
 
 
@@ -147,6 +149,18 @@ class BoolSignal(Resolver[BoolSeries]):
     def __invert__(self) -> BoolSignal:
         return self.not_()
 
+    def value_at(self, t: float) -> bool | None:
+        """The three-valued truth at ``t`` — ``True`` / ``False`` where defined, ``None`` in a gap.
+
+        Evaluated *pointwise* — the predicate applied to the reconstructed value, recursing through
+        the boolean structure (``not_`` / ``and_`` / ``or_``) — so it is exact at a threshold-touching
+        instant (a strict ``lt`` is ``False`` exactly *on* the threshold; a non-strict ``le`` is
+        ``True``) and a predicate and its negation are never both ``True``. This is the authoritative
+        pointwise truth that :meth:`at` returns; ``when_true`` reports the (closed) spans. The signal
+        must already be resolvable — :meth:`at` checks that first.
+        """
+        raise NotImplementedError  # pragma: no cover
+
 
 @dataclass(frozen=True, eq=False)
 class _ThresholdBoolSignal(BoolSignal):
@@ -165,6 +179,14 @@ class _ThresholdBoolSignal(BoolSignal):
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
 
+    def value_at(self, t: float) -> bool | None:
+        decided = self.source.decide()
+        assert isinstance(decided, Resolvable)  # `at` resolved the signal first, so the source resolves
+        series = decided.value
+        if not _contains(series.support, t):
+            return None
+        return self.satisfies(_lerp_at(series.times, series.values, t))
+
 
 @dataclass(frozen=True, eq=False)
 class _NotBoolSignal(BoolSignal):
@@ -178,6 +200,10 @@ class _NotBoolSignal(BoolSignal):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def value_at(self, t: float) -> bool | None:
+        verdict = self.source.value_at(t)
+        return None if verdict is None else not verdict
 
 
 @dataclass(frozen=True, eq=False)
@@ -200,6 +226,12 @@ class _CombinedBoolSignal(BoolSignal):
             true = intersect(union.intervals, support.intervals)
         return Resolvable(BoolSeries(support=support, true=CoverageValue(intersect(true, support.intervals))))
 
+    def value_at(self, t: float) -> bool | None:
+        va, vb = self.a.value_at(t), self.b.value_at(t)
+        if va is None or vb is None:  # strict: undefined wherever either operand is undefined
+            return None
+        return (va and vb) if self.op == "and" else (va or vb)
+
 
 @dataclass(frozen=True, eq=False)
 class _BoolSignalAt(Bool):
@@ -207,17 +239,17 @@ class _BoolSignalAt(Bool):
     instant: Instant
 
     def _decide(self) -> BoolDecision:
-        match self.signal.decide(), self.instant.decide():
-            case (Resolvable(series), Resolvable(t)):
-                verdict = series.holds_at(float(t))
-                if verdict is None:
-                    return Unresolvable(f"the predicate is undefined at t={float(t):g}s (a gap)")
-                return Resolvable(verdict)
-            case (Unresolvable() as bad, _):
-                return bad
-            case (_, Unresolvable() as bad):
-                return bad
-        raise AssertionError("unreachable")  # pragma: no cover
+        decided_signal = self.signal.decide()
+        if isinstance(decided_signal, Unresolvable):
+            return decided_signal
+        decided_t = self.instant.decide()
+        if isinstance(decided_t, Unresolvable):
+            return decided_t
+        t = float(decided_t.value)
+        verdict = self.signal.value_at(t)  # the exact pointwise truth (recurses through ~ / & / |)
+        if verdict is None:
+            return Unresolvable(f"the predicate is undefined at t={t:g}s (a gap)")
+        return Resolvable(verdict)
 
 
 @dataclass(frozen=True, eq=False)

@@ -121,3 +121,17 @@ def test_lift_and_map() -> None:
     assert np.allclose(disp.at(2.0).resolve(), [6, 8, 0])
     scaled = Vec3Signal.from_samples([0.0, 2.0], [[1, 0, 0], [1, 0, 0]]).map(lambda v: v.scale(3.0))
     assert np.allclose(scaled.at(0.0).resolve(), [3, 0, 0])
+
+
+def test_lift_over_sample_disjoint_overlap_is_unresolvable() -> None:
+    # two signals whose supports overlap but whose *sample instants* fall outside the overlap:
+    # there is no aligned instant to reconstruct from, so the lift is Unresolvable — not a
+    # 0-sample Resolvable that crashes on read (the empty-alignment guard)
+    a = Vec3Signal.from_samples([0.0, 10.0], [[0, 0, 0], [10, 0, 0]])  # samples at 0, 10
+    b = a.restrict(Interval.between(Instant.at(3.0), Instant.at(7.0)))  # support [3,7], samples still 0,10
+    summed = a + b  # binary lift (decide_lifted)
+    assert isinstance(summed.decide(), Unresolvable)
+    assert isinstance(summed.at(5.0).decide(), Unresolvable)  # was an IndexError before the guard
+    # the unary lift (decide_lifted_n, via map) hits the same guard
+    mapped = b.map(lambda v: v.scale(2.0))
+    assert isinstance(mapped.decide(), Unresolvable)

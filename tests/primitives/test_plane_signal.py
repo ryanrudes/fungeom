@@ -46,12 +46,32 @@ def test_normal_origin_and_signed_distance_readback() -> None:
 
 
 def test_fit_plane_orients_normals_consistently() -> None:
-    # two frames whose raw SVD normals could disagree in sign; fit_plane flips to agree,
-    # so the midpoint blend is well-posed (would be Unresolvable if they were opposed)
-    a = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0.01]]
-    b = [[0, 0, 0.5], [1, 0, 0.5], [0, 1, 0.5], [1, 1, 0.51]]
+    # two near-identical planar clouds whose *raw* SVD normals come out antipodal (the SVD sign is
+    # arbitrary). fit_plane must flip the track to agree, so the midpoint blend is well-posed —
+    # WITHOUT the orient step at(1.0) would be an opposed-normals Unresolvable.
+    from fungeom.primitives.bundle.resolvers.fit import fit_plane_coords
+
+    a = [
+        [0.2616121342493164, 0.2984911434141233, 0.0],
+        [0.8142257405942803, 0.0919159421350969, 0.0],
+        [0.600100525965654, 0.7285605268117946, 0.0],
+        [0.18790107336660344, 0.05514662733306819, 0.0],
+        [0.2749693679060381, 0.6574330148755926, 0.0],
+    ]
+    b = [
+        [0.2616121342493164, 0.2984911434141233, 5.6226566278042805e-06],
+        [0.8142257405942803, 0.0919159421350969, 1.5006226330533613e-06],
+        [0.600100525965654, 0.7285605268117946, 4.326307908047872e-06],
+        [0.18790107336660344, 0.05514662733306819, 6.692972985745203e-06],
+        [0.2749693679060381, 0.6574330148755926, 4.227846732701278e-06],
+    ]
+    # premise (self-checking, so this can never silently revert to a tautology): the raw normals
+    # really are antipodal, so the orient step is load-bearing for these clouds.
+    raw_a = fit_plane_coords(np.array(a), 1e-9).value.normal
+    raw_b = fit_plane_coords(np.array(b), 1e-9).value.normal
+    assert np.dot(raw_a, raw_b) < -0.9999999  # opposed before orientation
     plane = Point3BundleSignal.from_frames([0.0, 2.0], [a, b]).fit_plane()
-    assert isinstance(plane.at(1.0).resolve(), PlaneValue)  # resolves → normals agree
+    assert isinstance(plane.at(1.0).resolve(), PlaneValue)  # resolves only because fit_plane re-orients
 
 
 def test_opposed_normals_blend_is_unresolvable() -> None:
@@ -78,9 +98,12 @@ def test_tilting_normal_slerps() -> None:
         [0.0, 2.0],
         [PlaneValue(point=[0, 0, 0], normal=[0, 0, 1]), PlaneValue(point=[0, 0, 0], normal=[1, 0, 1])],
     )
-    mid = tilt.at(1.0).resolve().normal  # slerp between +z and the (1,0,1) tilt
-    assert np.isclose(np.linalg.norm(mid), 1.0)  # stays unit
-    assert mid[0] > 0 and mid[2] > 0  # genuinely between the two
+    # query at an *asymmetric* fraction (t=0.5 → frac=0.25) where slerp and a naive lerp+normalize
+    # (nlerp) genuinely diverge — at frac=0.5 they coincide, so the old midpoint check could not tell
+    # them apart. slerp gives [0.19509, 0, 0.98079]; nlerp would give [0.18737, 0, 0.98229].
+    quarter = tilt.at(0.5).resolve().normal
+    assert np.allclose(quarter, [0.19509032, 0.0, 0.98078528], atol=1e-6)  # the true slerp point
+    assert not np.allclose(quarter, [0.18736550, 0.0, 0.98229127], atol=1e-6)  # …distinctly not nlerp
 
 
 def test_orient_plane_track_flips_opposed_normals() -> None:

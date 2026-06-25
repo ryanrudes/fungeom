@@ -409,7 +409,17 @@ def decide_derivative[V, U](
                 left = i > 0 and connected(i - 1, i)
                 right = i < n - 1 and connected(i, i + 1)
                 if left and right:
-                    out.append(slope(values[i - 1], values[i + 1], float(times[i + 1]) - float(times[i - 1])))
+                    # The proper second-order *non-uniform* central difference: the interval-weighted
+                    # average of the two one-sided slopes, blend(back, fwd, h_back / (h_back + h_fwd)).
+                    # On a uniform grid this collapses to the usual (f[i+1] − f[i−1]) / 2h; on a
+                    # non-uniform grid the plain chord slope would be only first-order.
+                    h_back = float(times[i]) - float(times[i - 1])
+                    h_fwd = float(times[i + 1]) - float(times[i])
+                    back = slope(values[i - 1], values[i], h_back)
+                    forward = slope(values[i], values[i + 1], h_fwd)
+                    central = blend.between(back, forward, h_back / (h_back + h_fwd))
+                    assert isinstance(central, Resolvable)  # derivative result blends (scalar/vec3) are total
+                    out.append(central.value)
                 elif right:
                     out.append(slope(values[i], values[i + 1], float(times[i + 1]) - float(times[i])))
                 elif left:
@@ -458,6 +468,8 @@ def decide_lifted[U](
         return Unresolvable("the two signals' supports do not overlap")
     support = CoverageValue(kept)
     times = _union_times_in_support(decided_a.value.times, decided_b.value.times, support)
+    if not times:
+        return Unresolvable("the signals share no sample instant within their overlapping support")
     out: list[U] = []
     for t in times:
         point = at_combined(t).decide()
@@ -528,6 +540,8 @@ def decide_lifted_n[U](
     support = CoverageValue(spans)
     merged = sorted({float(t) for series in decided for t in series.times})
     times = [t for t in merged if any(span.start <= t <= span.end for span in spans)]
+    if not times:
+        return Unresolvable("the signals share no sample instant within their overlapping support")
     out: list[U] = []
     for t in times:
         point = at_combined(t).decide()

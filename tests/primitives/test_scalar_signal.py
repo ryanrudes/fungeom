@@ -303,3 +303,23 @@ def test_constant_offset_scale() -> None:
     s = ScalarSignal.from_samples([0.0, 2.0], [0.0, 10.0])
     assert s.offset(100.0).at(1.0).resolve() == 105.0
     assert s.scale(2.0).at(1.0).resolve() == 10.0
+
+
+def test_windowed_reductions_refuse_nonlinear_kernels() -> None:
+    # the breakpoint math (trapezoids, extrema at corners) is exact only for the piecewise-linear
+    # interpolant; a hold/nearest signal is refused rather than silently reduced as if linear
+    held = ScalarSignal.from_samples([0.0, 1.0], [0.0, 10.0], via=Interpolation.hold)
+    window = Interval.between(Instant.at(0.0), Instant.at(1.0))
+    assert "linear" in held.integral_over(window).decide().reason
+    assert "linear" in held.max_over(window).decide().reason
+    assert "linear" in held.argmin_over(window).decide().reason
+    # the default (linear) signal still reduces fine
+    linear = ScalarSignal.from_samples([0.0, 1.0], [0.0, 10.0])
+    assert linear.integral_over(window).resolve() == 5.0
+
+
+def test_derivative_is_second_order_on_a_non_uniform_grid() -> None:
+    # f(t) = t^2 sampled at non-uniform times: the proper non-uniform central difference is exact
+    # at the interior node (the naive chord slope would give 3.0, not f'(1) = 2.0)
+    f = ScalarSignal.from_samples([0.0, 1.0, 3.0], [0.0, 1.0, 9.0]).derivative()
+    assert f.at(1.0).resolve() == 2.0

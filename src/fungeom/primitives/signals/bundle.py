@@ -349,7 +349,7 @@ class _FittedPlaneSignal(PlaneSignal):
         planes = orient_plane_track(raw)
         return Resolvable(
             SampledSeries(
-                series.times, tuple(planes), Interpolation.linear, Boundary.undefined, PLANE_BLEND, series.support
+                series.times, tuple(planes), series.interpolation, series.boundary, PLANE_BLEND, series.support
             )
         )
 
@@ -681,7 +681,11 @@ def decide_folded[U](
 
     ``fold`` collapses one frame's bundle (e.g. the minimum over its present members); a frame
     whose fold is ``Unresolvable`` (a fold over no present members) makes the whole signal so.
-    The result is sampled at the same instants over the same support, read linearly.
+    The result is sampled at the same instants over the same support and **reconstructed the same
+    way the source is** — the per-frame fold commutes with the source's interpolation/boundary
+    (a held frame's fold is the held folded value), so a ``hold``/``nearest``/``wrap`` or
+    hold-boundary cloud signal folds to a signal read the same way, rather than silently
+    snapping to linear/undefined (which would disagree with ``at(t)`` and shrink the domain).
     """
     decided = source.decide()
     if isinstance(decided, Unresolvable):
@@ -694,7 +698,7 @@ def decide_folded[U](
             return Unresolvable(f"fold is undefined at a frame: {reduced.reason}")
         out.append(reduced.value)
     return Resolvable(
-        SampledSeries(series.times, tuple(out), Interpolation.linear, Boundary.undefined, blend, series.support)
+        SampledSeries(series.times, tuple(out), series.interpolation, series.boundary, blend, series.support)
     )
 
 

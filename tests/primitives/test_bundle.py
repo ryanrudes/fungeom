@@ -302,3 +302,10 @@ def test_per_key_transformed_by_a_transform_bundle() -> None:
     assert np.allclose(moved.at("b").resolve().coord, [-1, 0, 0], atol=1e-9)  # rot90·(0,1,0)
     # a single shared Transform still broadcasts (the overload)
     assert np.allclose(cloud.transformed_by(Transform.translation((5, 0, 0))).at("a").resolve().coord, [6, 0, 0])
+    # the documented key-*intersection* (decide_zipped, not a roster-preserving broadcast): a pose
+    # bundle missing a key drops that marker from the result rather than passing it through untouched
+    partial = TransformBundle.of([Transform.translation((10, 0, 0))], keys=["a"])  # only 'a'
+    result = cloud.transformed_by(partial)
+    assert set(result.support().resolve()) == {"a"}  # 'b' is dropped (intersection), not broadcast through
+    assert np.allclose(result.at("a").resolve().coord, [11, 0, 0])
+    assert isinstance(result.at("b").decide(), Unresolvable)

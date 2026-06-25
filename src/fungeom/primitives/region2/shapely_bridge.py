@@ -13,23 +13,24 @@ from __future__ import annotations
 import numpy as np
 from shapely import Polygon
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union
 
 from fungeom.primitives.region2.value import Region2Value, oriented_ccw, ring_signed_area
 
 
 def to_shapely(region: Region2Value) -> BaseGeometry:
-    """A region's oriented rings as a shapely geometry (each hole assigned to its containing shell)."""
+    """A region's rings as a shapely geometry, by the even-odd fill rule (orientation-independent).
+
+    A point is inside iff it lies within an *odd* number of rings — which is exactly the symmetric
+    difference (XOR) of the filled ring polygons. Building it that way (rather than bucketing rings
+    into shells/holes by winding sign) is faithful to the even-odd contract for *any* winding, so a
+    clockwise-wound outer ring is no longer mis-read as a hole and silently dropped to empty.
+    """
     if region.is_empty:
         return Polygon()
-    outers = [ring for ring in region.rings if ring_signed_area(ring) > 0.0]
-    holes = [ring for ring in region.rings if ring_signed_area(ring) < 0.0]
-    polygons = []
-    for outer in outers:
-        shell = Polygon(outer)
-        contained = [hole for hole in holes if shell.contains(Polygon(hole).representative_point())]
-        polygons.append(Polygon(outer, contained))
-    return polygons[0] if len(polygons) == 1 else unary_union(polygons)
+    geom: BaseGeometry = Polygon(region.rings[0])
+    for ring in region.rings[1:]:
+        geom = geom.symmetric_difference(Polygon(ring))
+    return geom
 
 
 def _polygons(geom: BaseGeometry) -> list[Polygon]:

@@ -25,8 +25,26 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the README combinator table.
 
-**Current status:** 1238 tests · **100 % line coverage** (enforced via
+**Current status:** 1246 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
+
+> **Adversarial review done (2026-06-25):** a multi-agent correctness + test-honesty review of
+> the substrate rungs (commit `8976860`) confirmed **13 findings** — **7 production correctness
+> bugs, all now fixed** (lift empty-alignment → `Unresolvable` not `IndexError`; windowed
+> reductions refuse non-linear kernels; `BoolSignal.at` made pointwise-exact at threshold touches
+> + non-strict touchpoints recorded; non-uniform central derivative; folds/`fit_plane` propagate
+> the source kernel/boundary; `to_shapely` even-odd XOR so a CW ring isn't silently emptied) — and
+> **6 test-honesty gaps**, of which **5 are closed** (discriminating tests for `fit_plane`
+> orientation, slerp-vs-nlerp, the `BoolSignal` boundary, the empty-alignment lift, and the
+> per-key `transformed_by` intersection). **1 is deferred:** writing the world-vs-body
+> `angular_velocity` test surfaced **issue #14** — `angular_velocity` returns the *body-frame*
+> axis (`R_aᵀ·R_b`) for non-commuting rotations even though its slope reads world-frame
+> (`R_b·R_aᵀ`); root-cause + fix is a separate focused pass (see the note in
+> `tests/primitives/test_transform_signal.py`).
+>
+> **Still pending:** the `/audit-primitives` *completeness* sweep (missing-combinator gaps) on
+> `Region2` / `Face` / `Point2Bundle` / the new signal facades. Their ✅ in the ledger below means
+> *built*, not *swept* — treat as audit-pending until that sweep runs.
 
 Run the gate: `pytest --cov=fungeom`. Test layout:
 

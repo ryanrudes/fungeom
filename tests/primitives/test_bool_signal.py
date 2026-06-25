@@ -84,3 +84,37 @@ def test_propagation_from_a_bad_signal() -> None:
     assert isinstance((bad.lt(0.0) & good).decide(), Unresolvable)
     assert isinstance((good & bad.lt(0.0)).decide(), Unresolvable)
     assert isinstance((bad.lt(0.0)).not_().decide(), Unresolvable)
+
+
+def test_at_is_exact_at_threshold_touch_for_strict_predicates() -> None:
+    # at an exact crossing the strict predicate is False (value is *on* the threshold), and a
+    # predicate and its negation are never both True there (the three-valued contract)
+    contact = _height().lt(0.0)  # crosses 0 exactly at t=1.5
+    assert contact.at(1.5).resolve() is False  # value is exactly 0, and 0 < 0 is False
+    assert (~contact).at(1.5).resolve() is True  # …so the negation is True — they disagree
+    assert contact.at(1.5).resolve() != (~contact).at(1.5).resolve()
+    # a left-endpoint sample sitting on the threshold is likewise False under a strict predicate
+    assert ScalarSignal.from_samples([0, 1], [0, -1]).lt(0.0).at(0.0).resolve() is False
+
+
+def test_non_strict_le_ge_include_an_interior_touchpoint() -> None:
+    # a valley grazing the threshold at an interior vertex: le is True there (0 <= 0), and the
+    # touch instant is reported by when_true as a degenerate point (consistent with at())
+    valley = ScalarSignal.from_samples([0, 1, 2], [1, 0, 1]).le(0.0)
+    assert valley.at(1.0).resolve() is True
+    assert valley.when_true().resolve() == CoverageValue((IntervalValue(1.0, 1.0),))
+    # the dual: a peak grazing from below under ge
+    peak = ScalarSignal.from_samples([0, 1, 2], [-1, 0, -1]).ge(0.0)
+    assert peak.at(1.0).resolve() is True
+
+
+def test_composed_at_is_pointwise_and_strict() -> None:
+    # & / | / ~ evaluate pointwise; a query where either operand is undefined (a gap) is Unresolvable
+    a = ScalarSignal.from_samples([0, 1, 2, 3, 4], [2, 1, -1, 1, 2]).lt(0.0)  # true on (1.5, 2.5)
+    b = ScalarSignal.from_samples([0, 1, 2, 3, 4], [-1, -1, -1, 1, 1]).lt(0.0)  # true on [0, ~2.5)
+    assert (a & b).at(2.0).resolve() is True  # both true at t=2
+    assert (a & b).at(0.5).resolve() is False  # a false at t=0.5
+    assert (a | b).at(0.5).resolve() is True  # b true at t=0.5
+    # a gap in one operand makes the conjunction undefined there (strict, not Kleene)
+    gappy = ScalarSignal.from_samples([0, 1, 3, 4], [1, -1, -1, 1], max_gap=1.5).lt(0.0)  # gap over (1,3)
+    assert isinstance((a & gappy).at(2.0).decide(), Unresolvable)
