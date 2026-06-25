@@ -156,7 +156,7 @@ The **identity ladder**:
 
 1. positional (`int`) — anonymous;
 2. keyed (labels) — nominal identity; **← build this (rung 2)**;
-3. groundable `Roster` + `RosterMap` correspondence — **reserved (rung 3, retarget's home)**.
+3. groundable `Roster` + `RosterMap` correspondence — **built (rung 3, retarget's home)**.
 
 A `Roster` is to the nominal axis what `Coverage` is to time: the **support set** for
 that axis (a set of keys vs a set of intervals), with the same union / intersection /
@@ -285,8 +285,8 @@ Mirrors the signal layer: a generic, `V`-agnostic core + thin per-type facades.
 | `BundleValue[V]` (resolved) | `SampledSeries[V]` | SoA: roster keys + values + presence |
 | `Point3Bundle` / `Vec3Bundle` / `ScalarBundle` / `Direction3Bundle` / `TransformBundle` | `…Signal` facades | per-type facade; `Point3Bundle` *is* a point cloud |
 | `Blend[V]` *(reused)* | — | already exists; the bundle `Blend` lifts it elementwise |
-| `Roster` | `Timeline` / `Frame` | identity domain for entities — **reserved (rung 3)** |
-| `RosterMap` | `TimeMap` / `Transform` | correspondence between rosters — **reserved (rung 3); retarget** |
+| `Roster` | `Timeline` / `Frame` | identity domain for entities — **built (rung 3)** |
+| `RosterMap` | `TimeMap` / `Transform` | correspondence between rosters — **built (rung 3); the retarget seam** |
 
 (Names provisional. `Bundle` carries the fiber-bundle resonance — a fiber `V` over
 each base/index point — which is exactly the structure.)
@@ -300,8 +300,9 @@ never the reverse** — the same discipline that keeps `timeline` below `signal`
 
 ```
 core < … < point3
-          < signal   (+ timewarp)
-          < bundle                       # bundle imports geometry; signal may host a bundle V
+          < signal              (+ timewarp)
+          < roster < rostermap         # rung 3: entity-axis identity domain + correspondence
+          < bundle                     # bundle imports geometry + roster/rostermap; signal may host a bundle V
 ```
 
 ---
@@ -314,7 +315,7 @@ core < … < point3
 | **2** | the algebra — `zip`-by-key (lift on the key *intersection*: `Scalar` `+ - * /`, `Vec3` `+ -`/`dot`, `Point3` `displacement_to`/`distance_to`), broadcast (`transformed_by`), folds (`sum`) — **DONE** (`decide_zipped` + `decide_mapped` helpers, mirroring signal lifting) |
 | **3** | over-time: the bundle `Blend` (elementwise lift) so `Signal[Bundle[V]]` works; the `(T, N)` occlusion mask — **`Point3BundleSignal` DONE** (`from_frames` + per-frame mask, `at(t)`→`Point3Bundle`, inherited time-ops; occlusion falls out of the key-intersection blend) **+ `key(k)`→`Point3Signal` DONE** (the *distribute* column — one marker's trajectory; its support gaps at occlusions/temporal dropouts so the commuting square `at(t).at(k) == key(k).at(t)` holds **under the default reconstruction**; a present-frames projection can't mirror `hold`/`nearest`/`wrap`, so `key()` refuses those as Unresolvable). Remaining: a *fully general* `key()` (delegating reconstruction, all kernels/boundaries); other bundle-signal types; full `traverse` (`Bundle[Signal] → Signal[Bundle]`, the reassembly direction) |
 | **4** | sparse encoding for anonymous / variable-`N` clouds |
-| **R** | **reserved:** `Roster` + `RosterMap` (entity grounding + correspondence) — the retarget seam; build when pulled, not speculatively |
+| **R** | `Roster` + `RosterMap` (entity grounding + correspondence) — the retarget seam — **DONE (2026-06-25, pulled by retarget).** `Roster` = the entity-axis support set (the nominal-axis `Coverage`): `of`/`empty`, total `union`/`intersection`/`difference`, `count`→`Scalar`, `contains`→`Bool`, order-free set equality; a `Bundle.support` is now a `Roster`. `RosterMap` = the identity correspondence (the nominal-axis `TimeMap`): `of`(landmarks)/`identity`/`known`, `@`(total), `inverse`(partial: non-injective), `source`/`target`→`Roster`, `maps`→`Bool`; **applied to data via `Bundle.relabel`** (the identity transfer, across all five facades, partial on a target collision). The geometric transfer on top stays parked numerics — `RosterMap` carries identity only, exactly as designed |
 
 Each phase follows the same definition of done as any primitive
 ([`CHECKLIST.md`](../CHECKLIST.md)): private resolver + documented facade,
@@ -357,10 +358,12 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
 - **Mirror-and-converge, do not refactor `Signal`:** build `Bundle` in the signal
   mold; extract a shared `Field`/axis base *only* if a third axis ever demands it.
   Premature unification is the live risk.
-- **Build rung 2, reserve rung 3:** `Roster`/`RosterMap` are written into the
-  roadmap (the retarget seam is too central to omit) but not built until pulled.
+- **Build rung 2, reserve rung 3:** `Roster`/`RosterMap` were written into the
+  roadmap (the retarget seam is too central to omit) but not built until pulled —
+  **now pulled and built (2026-06-25)**, as `retarget` reaches for the seam.
+  `RosterMap` carries *identity only*; the geometric transfer stays parked numerics.
 
-**Status:** spine + **phases 1–3 complete.** Phases 1–2: all five bundle facades
+**Status:** spine + **phases 1–3 complete, and rung 3 (phase R) built.** Phases 1–2: all five bundle facades
 (`Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3`) — generic `Bundle[V]` core +
 `BundleValue[V]` + shared decide helpers, first-class maskable support, strict
 construction, `of`/`from_array`/`from_map`, `at`/`present`/`count`/`where`, per-type
@@ -373,6 +376,16 @@ per-frame entity mask. **`key(k)`→`Point3Signal`** projects one marker's traje
 *distribute* column), its support gapping at occlusions/temporal dropouts so the commuting
 square `at(t).at(k) == key(k).at(t)` holds *under the default reconstruction* (linear +
 `undefined`); it refuses `hold`/`nearest`/`wrap` (which a present-frames projection cannot
-mirror) as Unresolvable rather than disagree. Remaining: a fully-general `key()` (delegating
-reconstruction), other bundle-signal types, full `traverse` (`Bundle[Signal] → Signal[Bundle]`),
-sparse encoding (phase 4), and the reserved `Roster`/`RosterMap` (rung 3). Each phase to the gate.
+mirror) as Unresolvable rather than disagree. **Rung 3 (phase R, 2026-06-25):** `Roster` (the
+entity-axis support set — the nominal-axis `Coverage`: `of`/`empty`, total set algebra, `count`,
+`contains`, order-free equality) and `RosterMap` (the identity correspondence — the nominal-axis
+`TimeMap`: `of`/`identity`/`known`, `@`, partial `inverse`, `source`/`target`, `maps`), wired into
+the bundle as `Bundle.support`→`Roster` and `Bundle.relabel(RosterMap)`→bundle (the retarget
+identity transfer, across all five facades). **`TransformBundleSignal` added (2026-06-25)** — the
+pose-set-over-time companion to `Point3BundleSignal` (`Signal[Bundle[Transform]]`, a skeleton's
+joints over time); its SE(3) bundle blend is the elementwise slerp lift, **strict over op-failure**
+(an antipodal joint makes the whole interpolated pose-set Unresolvable, never disguised as absence) —
+which is why it has no `key()` (the entity-axis commuting square needs a *total* blend, which only
+the `Point3` lerp provides). Remaining: a fully-general `key()` (delegating reconstruction), the
+remaining bundle-signal types (`Scalar`/`Vec3`/`Direction3`), full `traverse` (`Bundle[Signal] →
+Signal[Bundle]`), and sparse encoding (phase 4). Each phase to the gate.

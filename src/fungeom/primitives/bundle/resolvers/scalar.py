@@ -14,10 +14,12 @@ from fungeom.primitives.bundle.resolvers.base import (
     Bundle,
     decide_gathered,
     decide_member_at,
+    decide_relabeled,
     decide_where,
     decide_zipped,
 )
 from fungeom.primitives.bundle.value import BundleValue
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.scalar.decidability import ScalarDecision
 from fungeom.primitives.scalar.resolvers.base import Scalar
 
@@ -62,6 +64,10 @@ class ScalarBundle(Bundle[float]):
     def where(self, keys: Sequence[Hashable]) -> ScalarBundle:
         """The sub-bundle restricted to ``keys``."""
         return _WhereScalarBundle(source=self, keep=tuple(keys))
+
+    def relabel(self, mapping: RosterMap) -> ScalarBundle:
+        """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
+        return _RelabeledScalarBundle(source=self, mapping=mapping)
 
     def mean(self) -> Scalar:
         """The average of the present values (→ ``Scalar``); Unresolvable if none are."""
@@ -113,6 +119,15 @@ class _WhereScalarBundle(ScalarBundle):
 
     def _decide(self) -> BundleDecision[float]:
         return decide_where(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledScalarBundle(ScalarBundle):
+    source: ScalarBundle
+    mapping: RosterMap
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_relabeled(self.source, self.mapping)
 
 
 @dataclass(frozen=True, eq=False)

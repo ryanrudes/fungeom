@@ -27,6 +27,8 @@ from fungeom.primitives.point2 import Point2, Point2Value
 from fungeom.primitives.point3 import Point3, Point3Value
 from fungeom.primitives.ray import Ray, RayValue
 from fungeom.primitives.ray2 import Ray2, Ray2Value
+from fungeom.primitives.roster import Roster, RosterValue
+from fungeom.primitives.rostermap import KeyCorrespondence, RosterMap
 from fungeom.primitives.sampling import Sampling, SamplingValue
 from fungeom.primitives.segment import Segment, SegmentValue
 from fungeom.primitives.segment2 import Segment2, Segment2Value
@@ -39,6 +41,7 @@ from fungeom.primitives.signals import (
     Point3Signal,
     SampledSeries,
     ScalarSignal,
+    TransformBundleSignal,
     TransformSignal,
     Vec3Signal,
 )
@@ -96,6 +99,9 @@ __all__ = [
     "TransformBundle",
     "Point3Bundle",
     "Point3BundleSignal",
+    "TransformBundleSignal",
+    "Roster",
+    "RosterMap",
     "Interpolation",
     "Boundary",
     "ScalarSignal",
@@ -113,6 +119,8 @@ __all__ = [
     "SamplingValue",
     "SampledSeries",
     "BundleValue",
+    "RosterValue",
+    "KeyCorrespondence",
     "Float2",
     "Float3",
     "Mat2",

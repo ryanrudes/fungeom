@@ -3,11 +3,13 @@
 A bundle is the discrete counterpart of a :class:`~fungeom.primitives.signals.series.Signal`:
 where a signal is a partial function of *time*, a bundle is a partial function of a
 finite set of *keys*. The base carries the ops whose result type is not the facade's
-own primitive — :meth:`present` (→ ``Bool``) and :meth:`count` (→ ``Scalar``) — plus
-the value-type-agnostic *decide helpers* (:func:`decide_gathered` / :func:`decide_where`
-/ :func:`decide_member_at`) the per-type facades delegate to (the bundle analog of the
-signal layer's shared ``decide_*`` helpers). The lower-layer ``Bool`` / ``Scalar`` are
-imported normally.
+own primitive — :meth:`present` (→ ``Bool``), :meth:`count` (→ ``Scalar``), and
+:meth:`support` (→ ``Roster``, the rung-3 identity-domain lift of the present keys) —
+plus the value-type-agnostic *decide helpers* (:func:`decide_gathered` /
+:func:`decide_where` / :func:`decide_member_at` / :func:`decide_relabeled`) the per-type
+facades delegate to (the bundle analog of the signal layer's shared ``decide_*``
+helpers). The lower-layer ``Bool`` / ``Scalar`` / ``Roster`` / ``RosterMap`` are imported
+normally.
 """
 
 from __future__ import annotations
@@ -21,6 +23,10 @@ from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.decidability import BoolDecision
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.bundle.value import BundleValue
+from fungeom.primitives.roster.decidability import RosterDecision
+from fungeom.primitives.roster.resolvers.base import Roster
+from fungeom.primitives.roster.value import RosterValue
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.scalar.decidability import ScalarDecision
 from fungeom.primitives.scalar.resolvers.base import Scalar
 
@@ -46,6 +52,18 @@ class Bundle[V](Resolver[BundleValue[V]]):
     def count(self) -> Scalar:
         """How many keys are present — the size of the support (→ ``Scalar``)."""
         return _BundleCount(bundle=self)
+
+    def support(self) -> Roster:
+        """The present keys, as a :class:`~fungeom.primitives.roster.resolvers.base.Roster`.
+
+        The nominal-axis analog of ``Signal.support`` (which returns a ``Coverage``):
+        the entity-axis support set, lifted from a bare key tuple into the rung-3 identity
+        domain so it composes with the :meth:`~fungeom.RosterMap.source` / ``target``
+        rosters of a correspondence (``RosterMap``). *Present* keys only — an absent
+        (occluded) key is off the support, exactly as a temporal dropout is off a
+        signal's coverage.
+        """
+        return _BundleSupport(bundle=self)
 
 
 def decide_gathered[V](
@@ -152,6 +170,46 @@ def decide_mapped[U](
         case Unresolvable() as bad:
             return bad
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def decide_relabeled[V](source: Bundle[V], rostermap: RosterMap) -> Resolvability[BundleValue[V]]:
+    """Rename ``source``'s keys through a :class:`~fungeom.RosterMap` — the identity transfer.
+
+    The retarget seam: a bundle keyed by *source* entities (skeleton-A markers) becomes a
+    bundle keyed by *target* entities (skeleton-B joints), carrying each value across the
+    correspondence unchanged. A declared key outside the map's domain is **dropped** (it has
+    no target — a narrowing, like :func:`decide_where`); presence/absence carries through the
+    rename, so the occlusion mask transfers intact. **Unresolvable** when the correspondence
+    is not injective over this roster (two declared keys mapped onto the same target collapse
+    the collection) — the bundle-level mirror of ``RosterMap.inverse``'s partiality.
+    """
+    decided_source, decided_map = source.decide(), rostermap.decide()
+    if isinstance(decided_source, Unresolvable):
+        return decided_source
+    if isinstance(decided_map, Unresolvable):
+        return decided_map
+    collection, correspondence = decided_source.value, decided_map.value
+    renamed = [key for key in collection.roster if correspondence.maps(key)]
+    images = [correspondence.apply(key) for key in renamed]
+    if len(set(images)) != len(images):
+        return Unresolvable("relabel collapses distinct keys onto the same target")
+    members = {correspondence.apply(key): collection.members[key] for key in renamed if key in collection.members}
+    return Resolvable(BundleValue(roster=tuple(images), members=members))
+
+
+@dataclass(frozen=True, eq=False)
+class _BundleSupport(Roster):
+    """The present keys of ``bundle`` as a roster — V-agnostic, written once."""
+
+    bundle: Bundle[Any]
+
+    def _decide(self) -> RosterDecision:
+        match self.bundle.decide():
+            case Resolvable(collection):
+                return Resolvable(RosterValue(keys=collection.support()))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 @dataclass(frozen=True, eq=False)

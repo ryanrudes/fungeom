@@ -23,6 +23,7 @@ from fungeom.primitives.bundle.resolvers.base import (
     decide_gathered,
     decide_mapped,
     decide_member_at,
+    decide_relabeled,
     decide_where,
     decide_zipped,
 )
@@ -36,6 +37,7 @@ from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.transform.resolvers.base import Transform
 from fungeom.primitives.vec3.value import Float3
 
@@ -110,6 +112,16 @@ class Point3Bundle(Bundle[Point3Value]):
         """The sub-cloud restricted to ``keys`` (roster and support both narrowed)."""
         return _WherePoint3Bundle(source=self, keep=tuple(keys))
 
+    def relabel(self, mapping: RosterMap) -> Point3Bundle:
+        """Re-key the cloud through ``mapping`` — the identity transfer of retargeting.
+
+        A cloud keyed by *source* entities (skeleton-A markers) becomes one keyed by
+        *target* entities (skeleton-B joints), each position carried across unchanged.
+        Unmapped keys drop; the occlusion mask transfers. Unresolvable if the
+        correspondence collapses two keys onto the same target.
+        """
+        return _RelabeledPoint3Bundle(source=self, mapping=mapping)
+
     def centroid(self) -> Point3:
         """The centroid of the *present* members (→ ``Point3``); Unresolvable if none are."""
         return _BundleCentroid3(bundle=self)
@@ -171,6 +183,17 @@ class _WherePoint3Bundle(Point3Bundle):
 
     def _decide(self) -> BundleDecision[Point3Value]:
         return decide_where(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledPoint3Bundle(Point3Bundle):
+    """The cloud ``source`` re-keyed through ``mapping`` (the retarget identity transfer)."""
+
+    source: Point3Bundle
+    mapping: RosterMap
+
+    def _decide(self) -> BundleDecision[Point3Value]:
+        return decide_relabeled(self.source, self.mapping)
 
 
 @dataclass(frozen=True, eq=False)

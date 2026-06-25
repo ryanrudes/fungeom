@@ -31,6 +31,8 @@ from fungeom.primitives.point2.value import Point2Value
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.ray.value import RayValue
 from fungeom.primitives.ray2.value import Ray2Value
+from fungeom.primitives.roster.value import RosterValue
+from fungeom.primitives.rostermap.value import KeyCorrespondence
 from fungeom.primitives.sampling.value import SamplingValue
 from fungeom.primitives.segment.value import SegmentValue
 from fungeom.primitives.segment2.value import Segment2Value
@@ -69,6 +71,8 @@ __all__ = [
     "AffineTimeMap",
     "PiecewiseLinearWarp",
     "BundleValue",
+    "RosterValue",
+    "KeyCorrespondence",
     "Clock",
     "SamplingValue",
     "SampledSeries",

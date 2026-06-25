@@ -10,11 +10,18 @@ import numpy as np
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
-from fungeom.primitives.bundle.resolvers.base import Bundle, decide_gathered, decide_member_at, decide_where
+from fungeom.primitives.bundle.resolvers.base import (
+    Bundle,
+    decide_gathered,
+    decide_member_at,
+    decide_relabeled,
+    decide_where,
+)
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.direction3.decidability import Direction3Decision
 from fungeom.primitives.direction3.resolvers.base import Direction3
 from fungeom.primitives.direction3.value import Direction3Value
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 
 
 class Direction3Bundle(Bundle[Direction3Value]):
@@ -62,6 +69,10 @@ class Direction3Bundle(Bundle[Direction3Value]):
         """The sub-bundle restricted to ``keys``."""
         return _WhereDirection3Bundle(source=self, keep=tuple(keys))
 
+    def relabel(self, mapping: RosterMap) -> Direction3Bundle:
+        """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
+        return _RelabeledDirection3Bundle(source=self, mapping=mapping)
+
     def mean(self) -> Direction3:
         """The mean direction of the present members (normalize their sum, → ``Direction3``).
 
@@ -88,6 +99,15 @@ class _WhereDirection3Bundle(Direction3Bundle):
 
     def _decide(self) -> BundleDecision[Direction3Value]:
         return decide_where(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledDirection3Bundle(Direction3Bundle):
+    source: Direction3Bundle
+    mapping: RosterMap
+
+    def _decide(self) -> BundleDecision[Direction3Value]:
+        return decide_relabeled(self.source, self.mapping)
 
 
 @dataclass(frozen=True, eq=False)

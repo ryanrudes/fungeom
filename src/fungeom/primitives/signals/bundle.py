@@ -28,6 +28,7 @@ from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
 from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+from fungeom.primitives.bundle.resolvers.transform import TransformBundle
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.coverage.resolvers.base import Coverage
 from fungeom.primitives.coverage.value import CoverageValue
@@ -55,9 +56,12 @@ from fungeom.primitives.signals.series import (
     decide_warped,
     support_from_times,
 )
+from fungeom.primitives.signals.transform import TRANSFORM_BLEND
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
 from fungeom.primitives.timewarp.resolvers.base import TimeWarp
+from fungeom.primitives.transform.resolvers.base import Transform
+from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.vec3.value import as_vec3
 
 
@@ -346,4 +350,210 @@ class _RestrictedPoint3BundleSignal(Point3BundleSignal):
     to: Coverage
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_restricted(self.source, self.to)
+
+
+class _TransformBundleBlend:
+    """Geodesic blend of two pose-sets on SE(3), key by key — the elementwise lift of ``TRANSFORM_BLEND``.
+
+    Each key present in *both* frames is slerped (rotation) + lerped (translation) by the
+    same SE(3) blend a ``TransformSignal`` uses; a key absent in either bracket is absent
+    in the result (the entity half of the occlusion mask). **Strict over op-failure:** if
+    any present-in-both key is an opposed-orientation pair (no unique geodesic), the *whole*
+    interpolated pose-set is ``Unresolvable`` — an op-failure is never silently turned into
+    absence (the mask carries *data presence* only, never reconstruction failure). This is
+    the one way the partial SE(3) blend differs from the total ``Point3`` lerp, and it is
+    why ``TransformBundleSignal`` offers no ``key`` projection (see the class docstring).
+    """
+
+    def between(
+        self,
+        a: BundleValue[RigidTransform],
+        b: BundleValue[RigidTransform],
+        frac: float,
+    ) -> Resolvability[BundleValue[RigidTransform]]:
+        members: dict[Hashable, RigidTransform] = {}
+        for key in a.roster:
+            if a.present(key) and b.present(key):
+                decided = TRANSFORM_BLEND.between(a.members[key], b.members[key], frac)
+                if isinstance(decided, Unresolvable):
+                    return decided
+                members[key] = decided.value
+        return Resolvable(BundleValue(roster=a.roster, members=members))
+
+
+TRANSFORM_BUNDLE_BLEND = _TransformBundleBlend()
+
+
+class TransformBundleSignal(Signal[BundleValue[RigidTransform]]):
+    """A deferred set of rigid poses over time — a skeleton's joints (``Signal[Bundle[Transform]]``).
+
+    The rotation-over-time companion to :class:`Point3BundleSignal`: where that carries a
+    point cloud, this carries a *pose-set* — every joint's full SE(3) pose at each frame,
+    the natural home for mocap ``(T, N, 3, 3)`` / ``(T, N, 4)`` joint rotations. Build with
+    :meth:`from_frames` (a ``(T, N)`` grid of ``Transform`` poses over a time base, with an
+    optional ``(T, N)`` presence mask for per-frame occlusion); sample with :meth:`at`
+    (→ a rich :class:`~fungeom.TransformBundle`). The temporal ops (:meth:`over`,
+    :meth:`support`, :meth:`resample`, :meth:`restrict`, :meth:`shift`,
+    :meth:`reparameterize`) are inherited from the V-agnostic core unchanged.
+
+    Reconstruction is the elementwise SE(3) blend (slerp + lerp). Unlike the total
+    ``Point3`` lerp this blend is **partial** — interpolating across opposed orientations
+    is ``Unresolvable`` — and it is *strict over that op-failure*: one antipodal joint makes
+    the whole interpolated pose-set ``Unresolvable`` (an op-failure is never disguised as
+    absence). That strictness is exactly why there is **no** ``key`` projection here: the
+    entity-axis slice ``key(k).at(t)`` would depend only on ``k`` while ``at(t).at(k)``
+    depends on *every* joint (the whole-cloud blend), so the commuting square cannot hold —
+    a general delegating ``key`` is a documented follow-on. Query a single joint at an
+    instant with ``at(t).at(k)``.
+    """
+
+    type Value = SampledSeries[BundleValue[RigidTransform]]
+    """The resolved value type — a ``SampledSeries`` of rigid pose-sets."""
+
+    @classmethod
+    def from_frames(
+        cls,
+        times: ArrayLike,
+        frames: Sequence[Sequence[Transform]],
+        keys: Sequence[Hashable] | None = None,
+        via: Interpolation = Interpolation.linear,
+        outside: Boundary = Boundary.undefined,
+        max_gap: float | None = None,
+        present: ArrayLike | None = None,
+    ) -> TransformBundleSignal:
+        """A pose-set signal from a ``(T, N)`` grid of ``Transform`` poses over ``times``.
+
+        Each row is one frame's ``N`` joint poses (keyed by ``keys`` or by position).
+        Construction is **strict**: every present pose is resolved at build, so a partial
+        member (e.g. a degenerate-axis rotation) makes the whole signal ``Unresolvable``.
+        A ``(T, N)`` boolean ``present`` mask marks per-frame occlusion (an absent joint is
+        omitted from that frame's pose-set, and a *linear* interpolation across the dropout
+        leaves it absent); ``max_gap`` marks *temporal* dropouts as the other signals do.
+        A ``RigidTransform`` value is wrapped with ``Transform.known``.
+        """
+        rows = tuple(tuple(row) for row in frames)
+        width = len(rows[0]) if rows else 0
+        member_keys = tuple(keys) if keys is not None else tuple(range(width))
+        mask = None if present is None else np.array(present, dtype=bool)  # copy
+        return _SampledTransformBundleSignal(
+            sampling=Sampling.at_times(times),
+            frames=rows,
+            member_keys=member_keys,
+            present=mask,
+            interpolation=via,
+            boundary=outside,
+            max_gap=max_gap,
+        )
+
+    def at(self, instant: Instant | float) -> TransformBundle:
+        """The pose-set at ``instant`` (→ ``TransformBundle``); off-domain / in a gap / across opposed orientations is Unresolvable."""
+        from fungeom.primitives.instant.resolvers.literal import as_instant_resolver
+
+        return _TransformBundleSampleAt(signal=self, instant=as_instant_resolver(instant))
+
+    def resample(self, onto: Sampling) -> TransformBundleSignal:
+        """This pose-set signal reconstructed onto a new time base."""
+        return _ResampledTransformBundleSignal(source=self, onto=onto)
+
+    def reparameterize(self, by: AffineTimeMap | TimeMap | TimeWarp) -> TransformBundleSignal:
+        """This pose-set signal's time base warped ``by`` a map (shift / scale / reverse / warp)."""
+        if isinstance(by, TimeWarp):
+            return _ReparameterizedTransformBundleSignal(source=self, by=by)
+        from fungeom.primitives.timemap.resolvers.literal import as_timemap_resolver
+
+        return _ReparameterizedTransformBundleSignal(source=self, by=as_timemap_resolver(by))
+
+    def restrict(self, to: Interval | Coverage) -> TransformBundleSignal:
+        """Narrow this pose-set signal's support to its overlap with ``to`` (Unresolvable if disjoint)."""
+        window = to if isinstance(to, Coverage) else Coverage.of([to])
+        return _RestrictedTransformBundleSignal(source=self, to=window)
+
+    def shift(self, by: Duration | float) -> TransformBundleSignal:
+        """This pose-set signal translated in time by ``by``."""
+        return self.reparameterize(TimeMap.shift(by))
+
+
+@dataclass(frozen=True, eq=False)
+class _SampledTransformBundleSignal(TransformBundleSignal):
+    """Resolves each frame's pose-set (respecting the presence mask) before the series."""
+
+    sampling: Sampling
+    frames: tuple[tuple[Transform, ...], ...]
+    member_keys: tuple[Hashable, ...]
+    present: np.ndarray | None
+    interpolation: Interpolation
+    boundary: Boundary
+    max_gap: float | None
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        match self.sampling.decide():
+            case Resolvable(base):
+                if len(self.frames) != base.count:
+                    return Unresolvable(f"{len(self.frames)} frames for {base.count} sample times")
+                poses: list[BundleValue[RigidTransform]] = []
+                for ti in range(base.count):
+                    row = self.frames[ti]
+                    if len(row) != len(self.member_keys):
+                        return Unresolvable(f"frame {ti} has {len(row)} poses for {len(self.member_keys)} keys")
+                    members: dict[Hashable, RigidTransform] = {}
+                    for ni, key in enumerate(self.member_keys):
+                        if self.present is None or bool(self.present[ti, ni]):
+                            decided = row[ni].decide()
+                            if isinstance(decided, Unresolvable):
+                                return decided
+                            members[key] = decided.value
+                    poses.append(BundleValue(roster=self.member_keys, members=members))
+                return Resolvable(
+                    SampledSeries(
+                        base.times,
+                        tuple(poses),
+                        self.interpolation,
+                        self.boundary,
+                        TRANSFORM_BUNDLE_BLEND,
+                        support_from_times(base.times, self.max_gap),
+                    )
+                )
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _TransformBundleSampleAt(TransformBundle):
+    """The pose-set sampled at one instant — bridges back to the static Bundle algebra."""
+
+    signal: TransformBundleSignal
+    instant: Instant
+
+    def _decide(self) -> BundleDecision[RigidTransform]:
+        return decide_sample(self.signal, self.instant)
+
+
+@dataclass(frozen=True, eq=False)
+class _ResampledTransformBundleSignal(TransformBundleSignal):
+    source: TransformBundleSignal
+    onto: Sampling
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        return decide_resampled(self.source, self.onto)
+
+
+@dataclass(frozen=True, eq=False)
+class _ReparameterizedTransformBundleSignal(TransformBundleSignal):
+    source: TransformBundleSignal
+    by: TimeMap | TimeWarp
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        if isinstance(self.by, TimeWarp):
+            return decide_warped(self.source, self.by)
+        return decide_reparameterized(self.source, self.by)
+
+
+@dataclass(frozen=True, eq=False)
+class _RestrictedTransformBundleSignal(TransformBundleSignal):
+    source: TransformBundleSignal
+    to: Coverage
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
         return decide_restricted(self.source, self.to)

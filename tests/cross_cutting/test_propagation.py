@@ -34,10 +34,13 @@ from fungeom import (
     Point3Signal,
     Ray,
     Ray2,
+    Roster,
+    RosterMap,
     ScalarBundle,
     Segment,
     Segment2,
     TransformBundle,
+    TransformBundleSignal,
     Vec3Bundle,
     RigidTransform,
     Sampling,
@@ -100,8 +103,13 @@ BAD_PBS = Point3BundleSignal.from_frames([1, 0], [[[0, 0, 0]], [[1, 0, 0]]])  # 
 GOOD_PBS = Point3BundleSignal.from_frames([0, 1], [[[0, 0, 0]], [[1, 0, 0]]])
 BAD_VB, GOOD_VB = Vec3Bundle.of([BAD_V3]), Vec3Bundle.of([GOOD_V3])
 BAD_SB, GOOD_SB = ScalarBundle.of([BAD_S]), ScalarBundle.of([GOOD_S])
-BAD_DB = Direction3Bundle.of([BAD_D])
-BAD_TB = TransformBundle.of([BAD_T])
+BAD_DB, GOOD_DB = Direction3Bundle.of([BAD_D]), Direction3Bundle.of([GOOD_D])
+BAD_TB, GOOD_TB = TransformBundle.of([BAD_T]), TransformBundle.of([GOOD_T])
+BAD_TBS = TransformBundleSignal.from_frames([1, 0], [[GOOD_T], [GOOD_T]])  # out-of-order sampling
+GOOD_TBS = TransformBundleSignal.from_frames([0, 1], [[GOOD_T], [GOOD_T]])
+# roster / rostermap (rung 3) — Unresolvable only by propagation, seeded from an unbuildable bundle's support
+BAD_ROSTER, GOOD_ROSTER = BAD_BUNDLE.support(), Roster.of([0])
+BAD_RMAP, GOOD_RMAP = RosterMap.identity(BAD_ROSTER), RosterMap.of({0: "a"})
 BAD_VSIG = Vec3Signal.from_samples([1, 0], [[0, 0, 0], [1, 1, 1]])
 GOOD_VSIG = Vec3Signal.from_samples([0, 1, 2], [[0, 0, 0], [1, 0, 0], [2, 0, 0]])
 BAD_DSIG = Direction3Signal.from_samples([1, 0], [[1, 0, 0], [0, 1, 0]])
@@ -526,6 +534,23 @@ CASES: dict[str, Callable[[], object]] = {
     "timemap.through.first.target": lambda: TimeMap.through((GOOD_S, BAD_S), (GOOD_S, GOOD_S)),
     "timemap.through.second.source": lambda: TimeMap.through((GOOD_S, GOOD_S), (BAD_S, GOOD_S)),
     "timemap.through.second.target": lambda: TimeMap.through((GOOD_S, GOOD_S), (GOOD_S, BAD_S)),
+    # roster (rung 3 — the entity-axis support set)
+    "roster.union.a": lambda: BAD_ROSTER.union(GOOD_ROSTER),
+    "roster.union.b": lambda: GOOD_ROSTER.union(BAD_ROSTER),
+    "roster.intersection.a": lambda: BAD_ROSTER.intersection(GOOD_ROSTER),
+    "roster.intersection.b": lambda: GOOD_ROSTER.intersection(BAD_ROSTER),
+    "roster.difference.a": lambda: BAD_ROSTER.difference(GOOD_ROSTER),
+    "roster.difference.b": lambda: GOOD_ROSTER.difference(BAD_ROSTER),
+    "roster.count": lambda: BAD_ROSTER.count(),
+    "roster.contains": lambda: BAD_ROSTER.contains(0),
+    # rostermap (rung 3 — the entity-axis identity correspondence)
+    "rostermap.identity.roster": lambda: RosterMap.identity(BAD_ROSTER),
+    "rostermap.compose.outer": lambda: BAD_RMAP @ GOOD_RMAP,
+    "rostermap.compose.inner": lambda: GOOD_RMAP @ BAD_RMAP,
+    "rostermap.inverse": lambda: BAD_RMAP.inverse(),
+    "rostermap.source": lambda: BAD_RMAP.source(),
+    "rostermap.target": lambda: BAD_RMAP.target(),
+    "rostermap.maps": lambda: BAD_RMAP.maps(0),
     # timewarp
     "timewarp.inverse": lambda: BAD_TW.inverse(),
     "timewarp.domain": lambda: BAD_TW.domain(),
@@ -642,6 +667,9 @@ CASES: dict[str, Callable[[], object]] = {
     "bundle.present": lambda: BAD_BUNDLE.present(0),
     "bundle.count": lambda: BAD_BUNDLE.count(),
     "bundle.where": lambda: BAD_BUNDLE.where([0]),
+    "bundle.support": lambda: BAD_BUNDLE.support(),
+    "bundle.relabel.source": lambda: BAD_BUNDLE.relabel(GOOD_RMAP),
+    "bundle.relabel.mapping": lambda: GOOD_PB.relabel(BAD_RMAP),
     "bundle.centroid": lambda: BAD_BUNDLE.centroid(),
     "bundle.fit_plane": lambda: BAD_BUNDLE.fit_plane(),
     "bundle.fit_line": lambda: BAD_BUNDLE.fit_line(),
@@ -649,18 +677,26 @@ CASES: dict[str, Callable[[], object]] = {
     "vbundle.of": lambda: Vec3Bundle.of([BAD_V3]),
     "vbundle.at": lambda: BAD_VB.at(0),
     "vbundle.where": lambda: BAD_VB.where([0]),
+    "vbundle.relabel.source": lambda: BAD_VB.relabel(GOOD_RMAP),
+    "vbundle.relabel.mapping": lambda: GOOD_VB.relabel(BAD_RMAP),
     "vbundle.mean": lambda: BAD_VB.mean(),
     "sbundle.of": lambda: ScalarBundle.of([BAD_S]),
     "sbundle.at": lambda: BAD_SB.at(0),
     "sbundle.where": lambda: BAD_SB.where([0]),
+    "sbundle.relabel.source": lambda: BAD_SB.relabel(GOOD_RMAP),
+    "sbundle.relabel.mapping": lambda: GOOD_SB.relabel(BAD_RMAP),
     "sbundle.mean": lambda: BAD_SB.mean(),
     "dbundle.of": lambda: Direction3Bundle.of([BAD_D]),
     "dbundle.at": lambda: BAD_DB.at(0),
     "dbundle.where": lambda: BAD_DB.where([0]),
+    "dbundle.relabel.source": lambda: BAD_DB.relabel(GOOD_RMAP),
+    "dbundle.relabel.mapping": lambda: GOOD_DB.relabel(BAD_RMAP),
     "dbundle.mean": lambda: BAD_DB.mean(),
     "tbundle.of": lambda: TransformBundle.of([BAD_T]),
     "tbundle.at": lambda: BAD_TB.at(0),
     "tbundle.where": lambda: BAD_TB.where([0]),
+    "tbundle.relabel.source": lambda: BAD_TB.relabel(GOOD_RMAP),
+    "tbundle.relabel.mapping": lambda: GOOD_TB.relabel(BAD_RMAP),
     # bundle algebra — zip (lift), folds, broadcast
     "sbundle.add.lhs": lambda: BAD_SB + GOOD_SB,
     "sbundle.add.rhs": lambda: GOOD_SB + BAD_SB,
@@ -702,6 +738,21 @@ CASES: dict[str, Callable[[], object]] = {
     "pbsignal.restrict.to": lambda: GOOD_PBS.restrict(BAD_INT),
     "pbsignal.shift.source": lambda: BAD_PBS.shift(GOOD_DUR),
     "pbsignal.shift.by": lambda: GOOD_PBS.shift(BAD_DUR),
+    # transform bundle signal (pose-set over time; no key() — partial SE(3) blend)
+    "tbsignal.from_frames.sampling": lambda: TransformBundleSignal.from_frames([1, 0], [[GOOD_T], [GOOD_T]]),
+    "tbsignal.from_frames.member": lambda: TransformBundleSignal.from_frames([0, 1], [[BAD_T], [GOOD_T]]),
+    "tbsignal.at.signal": lambda: BAD_TBS.at(GOOD_I),
+    "tbsignal.at.instant": lambda: GOOD_TBS.at(BAD_I),
+    "tbsignal.over": lambda: BAD_TBS.over(),
+    "tbsignal.resample.source": lambda: BAD_TBS.resample(GOOD_SAMP),
+    "tbsignal.resample.onto": lambda: GOOD_TBS.resample(BAD_SAMP),
+    "tbsignal.reparam.source": lambda: BAD_TBS.reparameterize(GOOD_TM),
+    "tbsignal.reparam.by": lambda: GOOD_TBS.reparameterize(BAD_TM),
+    "tbsignal.reparam.warp": lambda: GOOD_TBS.reparameterize(BAD_TW),
+    "tbsignal.restrict.source": lambda: BAD_TBS.restrict(GOOD_INT),
+    "tbsignal.restrict.to": lambda: GOOD_TBS.restrict(BAD_INT),
+    "tbsignal.shift.source": lambda: BAD_TBS.shift(GOOD_DUR),
+    "tbsignal.shift.by": lambda: GOOD_TBS.shift(BAD_DUR),
 }
 
 

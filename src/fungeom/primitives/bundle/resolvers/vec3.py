@@ -15,10 +15,12 @@ from fungeom.primitives.bundle.resolvers.base import (
     decide_gathered,
     decide_mapped,
     decide_member_at,
+    decide_relabeled,
     decide_where,
     decide_zipped,
 )
 from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.vec3.decidability import Vec3Decision
 from fungeom.primitives.vec3.resolvers.base import Vec3
@@ -66,6 +68,10 @@ class Vec3Bundle(Bundle[Float3]):
         """The sub-bundle restricted to ``keys``."""
         return _WhereVec3Bundle(source=self, keep=tuple(keys))
 
+    def relabel(self, mapping: RosterMap) -> Vec3Bundle:
+        """Rename keys through ``mapping`` (Unresolvable if it collapses keys onto one target)."""
+        return _RelabeledVec3Bundle(source=self, mapping=mapping)
+
     def mean(self) -> Vec3:
         """The average of the present vectors (→ ``Vec3``); Unresolvable if none are."""
         return _Vec3BundleMean(bundle=self)
@@ -108,6 +114,15 @@ class _WhereVec3Bundle(Vec3Bundle):
 
     def _decide(self) -> BundleDecision[Float3]:
         return decide_where(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledVec3Bundle(Vec3Bundle):
+    source: Vec3Bundle
+    mapping: RosterMap
+
+    def _decide(self) -> BundleDecision[Float3]:
+        return decide_relabeled(self.source, self.mapping)
 
 
 @dataclass(frozen=True, eq=False)
