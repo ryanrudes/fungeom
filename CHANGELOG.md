@@ -7,6 +7,28 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-26
+
+The patch *runtime* — a moving patch retarget can read off as signals, with partiality flowing end
+to end.
+
+### Added
+
+- **`FaceSignal`** — a *moving patch*: a static `Face` fixed in a frame that moves over time
+  (`FaceSignal.of(face, pose)`). Query its world geometry as signals — `plane` (→ `PlaneSignal`,
+  so `normal`/`origin` follow), `frame` (→ `TransformSignal`), `boundary` (→ `Point3BundleSignal`),
+  `clearance` (→ `ScalarSignal` / `ScalarBundleSignal`), `contains` (→ `BoolSignal`), `region`,
+  `at(t)` (→ `Face`).
+- **Rigid transport** — `Plane.transformed_by(Transform)` and `Face.transformed_by(Transform)`.
+- **`Face.frame()`** (→ `Transform`, canonical patch frame) and **`Face.boundary()`**
+  (→ `Point3Bundle`, footprint vertices in 3D); `Face.clearance` now also broadcasts over a
+  `Point3Bundle`.
+- **`TransformBundleSignal.key(j)`** (→ `TransformSignal`) — one joint's pose trajectory.
+- **`TransformSignal.from_matrices(times, (T, 4, 4))`** — a vectorized batch carrier; `resolve_over`
+  reads back via batched slerp + lerp (~50× faster than the per-object path, exact match).
+
+## [0.1.0] - 2026-06-26
+
 The first release. fungeom models geometry as an immutable, lazily-evaluated, **decidable** graph
 of resolvers where partiality is first-class (`decide()` → `Resolvable` / `Unresolvable`).
 
@@ -26,4 +48,6 @@ of resolvers where partiality is first-class (`decide()` → `Resolvable` / `Unr
 - **Regions** — `Point2Bundle`, `Region2` (general GEOS-backed boolean algebra + `offset`), `Face`.
 - Ten runnable examples, full wiki + reference docs, 100% test coverage.
 
-[Unreleased]: https://github.com/ryanrudes/fungeom/commits/main
+[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ryanrudes/fungeom/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ryanrudes/fungeom/releases/tag/v0.1.0
