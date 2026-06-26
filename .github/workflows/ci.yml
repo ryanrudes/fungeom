@@ -18,7 +18,7 @@ jobs:
 
       - name: Create venv and install (with dev deps)
         run: |
-          uv venv
+          uv venv --clear  # setup-uv@v5 auto-creates a .venv; --clear avoids "already exists"
           uv pip install -e '.[dev]'
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
