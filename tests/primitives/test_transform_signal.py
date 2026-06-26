@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from scipy.spatial.transform import Rotation
 
 from fungeom import Instant, Interval, Sampling, TimeMap, TransformSignal, Unresolvable
@@ -141,3 +142,37 @@ def test_linear_velocity() -> None:
     # the linear half of the twist needs ≥ 2 samples, like angular_velocity
     single = TransformSignal.from_samples([0.0], [RigidTransform.identity()])
     assert isinstance(single.velocity().decide(), Unresolvable)
+
+
+def test_from_matrices_matches_from_samples() -> None:
+    from fungeom import Sampling
+
+    rng = np.random.default_rng(0)
+    times = np.arange(6, dtype=float)
+    mats = np.tile(np.eye(4), (6, 1, 1))
+    mats[:, :3, :3] = Rotation.from_euler("xyz", rng.random((6, 3))).as_matrix()
+    mats[:, :3, 3] = rng.random((6, 3))
+    carrier = TransformSignal.from_matrices(times, mats)
+    reference = TransformSignal.from_samples(times, [RigidTransform.from_matrix(m) for m in mats])
+    grid = Sampling.uniform(Interval.between(Instant.at(0.0), Instant.at(5.0)), 21)  # incl. sub-sample points
+    # the vectorized fast path reproduces the generic per-object readback exactly (slerp + lerp)
+    assert np.allclose(carrier.resolve_over(grid), reference.resolve_over(grid), atol=1e-9)
+    # _decide still materializes for at()/lifts
+    assert np.allclose(carrier.at(2.0).resolve().matrix, mats[2])
+
+
+def test_from_matrices_off_domain_and_nonlinear_fall_back() -> None:
+    from fungeom import Interpolation, Sampling, UnresolvableError
+
+    times = np.array([0.0, 1.0, 2.0])
+    mats = np.tile(np.eye(4), (3, 1, 1))
+    mats[:, 0, 3] = [0.0, 10.0, 20.0]  # translating in x
+    carrier = TransformSignal.from_matrices(times, mats)
+    # off-domain → the fast path falls back to the generic path, which raises (boundary=undefined)
+    off = Sampling.uniform(Interval.between(Instant.at(0.0), Instant.at(9.0)), 3)
+    with pytest.raises(UnresolvableError):
+        carrier.resolve_over(off)
+    # a non-linear kernel also falls back to the generic reconstruction (and is correct)
+    held = TransformSignal.from_matrices(times, mats, via=Interpolation.hold)
+    grid = Sampling.at_times([0.5, 1.5])
+    assert np.allclose(held.resolve_over(grid)[:, 0, 3], [0.0, 10.0])  # held, not interpolated

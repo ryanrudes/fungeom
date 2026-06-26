@@ -582,6 +582,18 @@ class TransformBundleSignal(Signal[BundleValue[RigidTransform]]):
 
         return _TransformBundleSampleAt(signal=self, instant=as_instant_resolver(instant))
 
+    def key(self, joint: Hashable) -> TransformSignal:
+        """One joint's pose trajectory over time (→ ``TransformSignal``) — the *entity-axis* slice.
+
+        The transpose of :meth:`at` (which slices the whole pose-set at one instant): ``key(j)``
+        pulls one joint's pose across all time, as an ordinary ``TransformSignal`` (so the segment
+        runtime can transport a patch by ``poses.key("shin")``). Its support gaps out where the
+        joint is occluded, so the commuting square ``at(t).at(j) == key(j).at(t)`` holds on the
+        support (both reconstruct by the same slerp — Unresolvable together across opposed
+        orientations). Unresolvable to build if ``j`` is absent from the roster or never present.
+        """
+        return _DistributedTransformSignal(source=self, joint=joint)
+
     def resample(self, onto: Sampling) -> TransformBundleSignal:
         """This pose-set signal reconstructed onto a new time base."""
         return _ResampledTransformBundleSignal(source=self, onto=onto)
@@ -602,6 +614,17 @@ class TransformBundleSignal(Signal[BundleValue[RigidTransform]]):
     def shift(self, by: Duration | float) -> TransformBundleSignal:
         """This pose-set signal translated in time by ``by``."""
         return self.reparameterize(TimeMap.shift(by))
+
+
+@dataclass(frozen=True, eq=False)
+class _DistributedTransformSignal(TransformSignal):
+    """One joint's pose trajectory projected out of a pose-set signal — bridges to TransformSignal."""
+
+    source: TransformBundleSignal
+    joint: Hashable
+
+    def _decide(self) -> Resolvability[SampledSeries[RigidTransform]]:
+        return decide_distributed(self.source, self.joint, TRANSFORM_BLEND)
 
 
 @dataclass(frozen=True, eq=False)
