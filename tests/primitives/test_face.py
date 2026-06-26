@@ -79,3 +79,32 @@ def test_contains_is_footprint_membership() -> None:
     # total — an empty patch has no footprint, so contains is False (not Unresolvable)
     empty = Face.on(Plane.through(Point3.at(0, 0, 0), Direction3.of(0, 0, 1)), Region2.empty)
     assert empty.contains(Point3.at(0, 0, 0)).resolve() is False
+
+
+def test_transformed_by_transports_the_patch() -> None:
+    from fungeom import Transform
+
+    patch = _patch()  # z = 0 plane, 4×2 rectangle
+    moved = patch.transformed_by(Transform.translation([0, 0, 3]))  # lift the whole patch +3z
+    # a point 5 above the original now sits 2 above the moved patch
+    assert np.isclose(moved.clearance(Point3.at(0.5, 0.3, 5.0)).resolve(), 2.0)
+    assert np.allclose(moved.plane().normal().resolve().vector, [0, 0, 1])  # the region is kept (plane-local)
+
+
+def test_frame_is_deterministic_with_normal_as_z() -> None:
+    patch = _patch()
+    frame = patch.frame().resolve()
+    assert np.allclose(frame.rotation[:, 2], [0, 0, 1])  # +z column = the plane normal
+    assert frame.approx_equal(patch.frame().resolve())  # deterministic: same face → same frame
+    # an empty patch has no centroid, so no frame
+    empty = Face.on(Plane.through(Point3.at(0, 0, 0), Direction3.of(0, 0, 1)), Region2.empty)
+    assert isinstance(empty.frame().decide(), Unresolvable)
+
+
+def test_boundary_embeds_the_footprint_vertices() -> None:
+    patch = _patch()  # 4×2 rectangle on z = 0 → 4 corners
+    boundary = patch.boundary()
+    assert boundary.count().resolve() == 4
+    # every corner lies on the plane (z = 0)
+    for key in range(4):
+        assert np.isclose(boundary.at(key).resolve().coord[2], 0.0)

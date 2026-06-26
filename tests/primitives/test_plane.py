@@ -161,3 +161,16 @@ def test_zero_normal_is_rejected() -> None:
     # the value type enforces the unit-normal invariant (the facade never hits this)
     with pytest.raises(ValueError, match="zero normal"):
         PlaneValue(point=np.zeros(3), normal=np.zeros(3))
+
+
+def test_transformed_by_moves_point_and_rotates_normal() -> None:
+    from fungeom import Transform
+
+    g = _ground()  # z = 5 plane, normal +z
+    # translate +z by 2: plane moves to z = 7, normal unchanged
+    up = g.transformed_by(Transform.translation([0, 0, 2])).resolve()
+    assert np.allclose(up.point, [0, 0, 7])
+    assert np.allclose(up.normal, [0, 0, 1])
+    # rotate 90° about x: the +z normal rotates to -y (rotation only, no translation drift of the normal)
+    spun = g.transformed_by(Transform.rotation(Direction3.of(1, 0, 0), np.pi / 2)).resolve()
+    assert np.allclose(spun.normal, [0, -1, 0], atol=1e-9)

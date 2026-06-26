@@ -20,6 +20,7 @@ from fungeom.primitives.signals.series import SampledSeries, Signal
 from fungeom.primitives.signals.boolean import BoolSeries, BoolSignal
 from fungeom.primitives.signals.plane import PlaneSignal
 from fungeom.primitives.signals.bundle import Point3BundleSignal, ScalarBundleSignal, TransformBundleSignal
+from fungeom.primitives.signals.face import FaceSignal
 from fungeom.primitives.signals.transform import TransformSignal
 from fungeom.primitives.signals.vec3 import Vec3Signal
 
@@ -37,6 +38,7 @@ __all__ = [
     "TransformSignal",
     "Point3Signal",
     "PlaneSignal",
+    "FaceSignal",
     "Point3BundleSignal",
     "ScalarBundleSignal",
     "TransformBundleSignal",

@@ -165,6 +165,12 @@ class Plane(Resolver[PlaneValue]):
 
         return PlaneOffset(plane=self, distance=as_scalar_resolver(distance))
 
+    def transformed_by(self, transform: Transform) -> Plane:
+        """This plane moved by a rigid ``transform`` (→ ``Plane``; the point is moved, the normal rotated)."""
+        from fungeom.primitives.plane.resolvers.transformed import TransformedPlane
+
+        return TransformedPlane(plane=self, transform=transform)
+
     def project_direction(self, direction: Direction3) -> Direction3:
         """``direction`` projected into the plane and renormalized (Unresolvable if normal-parallel)."""
         from fungeom.primitives.plane.resolvers.project_direction import PlaneProjectDirection

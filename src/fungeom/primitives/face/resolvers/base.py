@@ -9,6 +9,8 @@ the patch (where the infinite-`Plane` distance would lie). Above ``plane`` / ``r
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, overload
+
 from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.face.value import FaceValue
@@ -16,6 +18,11 @@ from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.region2.resolvers.base import Region2
 from fungeom.primitives.scalar.resolvers.base import Scalar
+from fungeom.primitives.transform.resolvers.base import Transform
+
+if TYPE_CHECKING:
+    from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+    from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
 
 
 class Face(Resolver[FaceValue]):
@@ -61,13 +68,22 @@ class Face(Resolver[FaceValue]):
 
         return FaceClosestPoint(face=self, point=point)
 
-    def clearance(self, point: Point3) -> Scalar:
+    @overload
+    def clearance(self, point: Point3) -> Scalar: ...
+    @overload
+    def clearance(self, point: Point3Bundle) -> ScalarBundle: ...
+    def clearance(self, point: Point3 | Point3Bundle) -> Scalar | ScalarBundle:
         """The 3-D distance from ``point`` to the bounded patch (→ ``Scalar``; Unresolvable if empty).
 
         The *honest* footprint clearance: unlike ``Plane.distance_to`` (the infinite plane),
         this clamps into the region, so a foot beside the patch measures to its edge, not to the
-        point directly below.
+        point directly below. Broadcasts over a ``Point3Bundle`` (→ ``ScalarBundle``, per marker).
         """
+        from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
+
+        if isinstance(point, Point3Bundle):
+            return point.map_scalar(lambda member: self.clearance(member))
+
         from fungeom.primitives.face.resolvers.clearance import FaceClearance
 
         return FaceClearance(face=self, point=point)
@@ -81,3 +97,21 @@ class Face(Resolver[FaceValue]):
         from fungeom.primitives.face.resolvers.contains import FaceContains
 
         return FaceContains(face=self, point=point)
+
+    def transformed_by(self, transform: Transform) -> Face:
+        """This patch moved rigidly in 3D (→ ``Face``; the plane is transported, the region kept)."""
+        return Face.on(self.plane().transformed_by(transform), self.region())
+
+    def frame(self) -> Transform:
+        """The canonical patch frame (→ ``Transform``): origin at the region centroid, +z = the plane
+        normal, +x = the plane's stable chart x-axis. Deterministic; Unresolvable for an empty face.
+        """
+        from fungeom.primitives.face.resolvers.frame import FaceFrame
+
+        return FaceFrame(face=self)
+
+    def boundary(self) -> Point3Bundle:
+        """This patch's footprint vertices embedded in world, keyed ``0..N-1`` (→ ``Point3Bundle``)."""
+        from fungeom.primitives.face.resolvers.boundary import FaceBoundary
+
+        return FaceBoundary(face=self)
