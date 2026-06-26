@@ -26,6 +26,7 @@ from fungeom import (
     BoolBundle,
     Direction3Bundle,
     Face,
+    FaceSignal,
     Line,
     Line2,
     Plane,
@@ -132,6 +133,8 @@ BAD_TSIG = TransformSignal.from_samples([1, 0], [_ID, _ID])
 GOOD_TSIG = TransformSignal.from_samples([0, 1, 2], [_ID, _ID, _ID])
 BAD_PSIG = Point3Signal.from_samples([1, 0], [[0, 0, 0], [1, 1, 1]])
 GOOD_PSIG = Point3Signal.from_samples([0, 1, 2], [[0, 0, 0], [1, 0, 0], [2, 0, 0]])
+BAD_FSIG = FaceSignal.of(GOOD_FACE, BAD_TSIG)  # a moving patch with a bad pose
+GOOD_FSIG = FaceSignal.of(GOOD_FACE, GOOD_TSIG)
 _PLN = PlaneValue(point=[0, 0, 0], normal=[0, 0, 1])
 BAD_PLSIG = PlaneSignal.from_samples([1, 0], [_PLN, _PLN])  # out-of-order sampling
 GOOD_PLSIG = PlaneSignal.from_samples([0, 1], [_PLN, _PLN])
@@ -882,6 +885,8 @@ CASES: dict[str, Callable[[], object]] = {
     "region2.contains_region.b": lambda: GOOD_REGION.contains_region(BAD_REGION),
     "region2.closest_point.region": lambda: BAD_REGION.closest_point(GOOD_P2),
     "region2.closest_point.point": lambda: GOOD_REGION.closest_point(BAD_P2),
+    "plane.transformed_by.plane": lambda: BAD_PLANE.transformed_by(GOOD_T),
+    "plane.transformed_by.transform": lambda: GOOD_PLANE.transformed_by(BAD_T),
     # face (oriented bounded patch)
     "face.on.plane": lambda: Face.on(BAD_PLANE, GOOD_REGION),
     "face.on.region": lambda: Face.on(GOOD_PLANE, BAD_REGION),
@@ -893,6 +898,26 @@ CASES: dict[str, Callable[[], object]] = {
     "face.clearance.point": lambda: GOOD_FACE.clearance(BAD_P),
     "face.contains.face": lambda: BAD_FACE.contains(GOOD_P),
     "face.contains.point": lambda: GOOD_FACE.contains(BAD_P),
+    "face.transformed_by.face": lambda: BAD_FACE.transformed_by(GOOD_T),
+    "face.transformed_by.transform": lambda: GOOD_FACE.transformed_by(BAD_T),
+    "face.frame": lambda: BAD_FACE.frame(),
+    "face.boundary": lambda: BAD_FACE.boundary(),
+    "face.clearance.cloud": lambda: GOOD_FACE.clearance(BAD_BUNDLE),
+    # FaceSignal (the moving patch)
+    "facesignal.of.face": lambda: FaceSignal.of(BAD_FACE, GOOD_TSIG),
+    "facesignal.of.pose": lambda: FaceSignal.of(GOOD_FACE, BAD_TSIG),
+    "facesignal.at.signal": lambda: BAD_FSIG.at(0.5),
+    "facesignal.at.instant": lambda: GOOD_FSIG.at(BAD_I),
+    "facesignal.region": lambda: FaceSignal.of(BAD_FACE, GOOD_TSIG).region(),
+    "facesignal.plane": lambda: BAD_FSIG.plane(),
+    "facesignal.frame": lambda: BAD_FSIG.frame(),
+    "facesignal.boundary": lambda: BAD_FSIG.boundary(),
+    "facesignal.clearance.signal": lambda: BAD_FSIG.clearance(GOOD_PSIG),
+    "facesignal.clearance.point": lambda: GOOD_FSIG.clearance(BAD_PSIG),
+    "facesignal.clearance_cloud.signal": lambda: BAD_FSIG.clearance(GOOD_PBS),
+    "facesignal.clearance_cloud.cloud": lambda: GOOD_FSIG.clearance(BAD_PBS),
+    "facesignal.contains.signal": lambda: BAD_FSIG.contains(GOOD_PSIG),
+    "facesignal.contains.point": lambda: GOOD_FSIG.contains(BAD_PSIG),
     # other bundle facades
     "vbundle.of": lambda: Vec3Bundle.of([BAD_V3]),
     "vbundle.at": lambda: BAD_VB.at(0),

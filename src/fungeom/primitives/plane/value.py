@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from fungeom.core.arrays import freeze
+from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.vec2.value import Float2, as_vec2
 from fungeom.primitives.vec3.value import Float3, as_vec3
 
@@ -80,6 +81,10 @@ class PlaneValue:
     def offset(self, distance: float) -> PlaneValue:
         """A parallel plane shifted ``distance`` along the normal."""
         return PlaneValue(point=as_vec3(self.point + distance * self.normal), normal=self.normal)
+
+    def transformed_by(self, transform: RigidTransform) -> PlaneValue:
+        """This plane moved by a rigid ``transform`` — the point is moved, the normal rotated."""
+        return PlaneValue(point=transform.apply_point(self.point), normal=transform.apply_vector(self.normal))
 
     def flipped(self) -> PlaneValue:
         """The same plane with the opposite (negated) normal."""

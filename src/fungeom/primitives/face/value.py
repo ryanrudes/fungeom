@@ -14,8 +14,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from collections.abc import Hashable
+
+from scipy.spatial.transform import Rotation
+
+from fungeom.primitives.bundle.value import BundleValue
+from fungeom.primitives.frame.value import WORLD_FRAME
 from fungeom.primitives.plane.value import PlaneValue
+from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.region2.value import Region2Value
+from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.vec3.value import Float3, as_vec3
 
 
@@ -52,6 +60,28 @@ class FaceValue:
         The support-polygon membership test (is the foot / CoM *over* the patch), independent of the
         normal-direction offset. ``False`` for an empty region (no footprint)."""
         return self.region.contains(self.plane.to_local(as_vec3(p)))
+
+    def transformed_by(self, transform: RigidTransform) -> FaceValue:
+        """This patch moved rigidly in 3D — the plane is transported, the (plane-local) region kept."""
+        return FaceValue(plane=self.plane.transformed_by(transform), region=self.region)
+
+    def frame(self) -> RigidTransform:
+        """The canonical patch frame: origin at the region centroid, +z = normal, +x = the plane's
+        stable chart x-axis (raises if the region is empty / zero-area — no centroid)."""
+        origin = self.plane.embed(self.region.centroid())  # centroid is in the chart; embed to 3D
+        x, _y = self.plane.local_axes()
+        z = self.plane.normal
+        y = as_vec3(np.cross(z, x))
+        rotation = Rotation.from_matrix(np.column_stack([x, y, z]))
+        return RigidTransform.from_rotation(rotation, origin)
+
+    def boundary_cloud(self) -> BundleValue[Point3Value]:
+        """The footprint vertices embedded in 3D, keyed ``0..N-1`` in ring order (empty region → empty)."""
+        coords = [vertex for ring in self.region.rings for vertex in ring]
+        members: dict[Hashable, Point3Value] = {
+            i: Point3Value(coord=self.plane.embed(coord), frame=WORLD_FRAME) for i, coord in enumerate(coords)
+        }
+        return BundleValue(roster=tuple(range(len(coords))), members=members)
 
     def __repr__(self) -> str:
         return f"FaceValue(plane={self.plane!r}, region={self.region!r})"
