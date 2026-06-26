@@ -53,10 +53,17 @@ disagree.
 ## Install
 
 ```bash
-uv pip install -e '.[dev]'      # from a checkout (dev extras: ruff, mypy, pytest)
+pip install fungeom
 ```
 
-Requires Python 3.13+. Runtime deps: `numpy`, `scipy`, `rich`, `shapely`.
+Requires Python 3.13+; the runtime deps (`numpy`, `scipy`, `rich`, `shapely`) come with it.
+
+**For development** — from a checkout, with the dev extras (`ruff`, `mypy`, `pytest`):
+
+```bash
+git clone https://github.com/ryanrudes/fungeom && cd fungeom
+uv pip install -e '.[dev]'
+```
 
 ## The surface, at a glance
 
