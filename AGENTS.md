@@ -88,7 +88,7 @@ reverse.
 Follow the procedures in [`CHECKLIST.md`](CHECKLIST.md). In short: implement the
 private resolver + the facade method (both documented) → return `Unresolvable`
 for partial cases → add a unit test, a partiality test, and propagation cases
-(one per resolver input position) → add a README combinator-table row → tick the
+(one per resolver input position) → add a docs/reference.md combinator-table row → tick the
 checklist row → confirm `ruff` + `mypy` + `pytest --cov` (100%).
 
 To sweep an *existing* primitive for **missing** constructors/combinators (rather

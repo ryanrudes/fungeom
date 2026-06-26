@@ -17,13 +17,13 @@ Each row is one user-facing thing (a constructor or a combinator). Columns:
 | **Unit** | has a value-correctness test | missing |
 | **Partial** | its value-dependent partialities are tested | it is *total* (no partial cases) |
 | **Prop** | unresolvability-propagation through it is tested | it is a literal leaf (no resolver inputs) |
-| **README** | appears in the README combinator table / docs | not documented for users |
+| **README** | appears in the combinator table (docs/reference.md) | not documented for users |
 
 **Definition of done** for a new combinator = every column ✅ (or a justified —).
 Concretely: a docstring; a value-correctness test in `tests/primitives/test_<p>.py`;
 a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
-position**; and a row in the README combinator table.
+position**; and a row in the combinator table (docs/reference.md).
 
 **Current status:** 1279 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
@@ -905,7 +905,7 @@ sole partial op (a non-injective map has no inverse — the analog of a zero-rat
 4. **Partiality test** each partial case (if any) in the same file.
 5. **Propagation:** add a case to `tests/cross_cutting/test_propagation.py` for
    **every resolver-typed input position** (`lhs`/`rhs`, `a`/`b`/`t`, …).
-6. **Document** it: a row in the README combinator table.
+6. **Document** it: a row in the combinator table (docs/reference.md).
 7. **Update this checklist** (new row, all columns).
 8. Run `pytest --cov=fungeom` (must stay at 100 %) + `ruff` + `mypy`.
 

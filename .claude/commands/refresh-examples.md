@@ -16,8 +16,8 @@ green.
 Before doing anything, (re-)read the contract you must obey:
 
 - **`AGENTS.md`** — what the library *is*, the hard rules, PEP 695 typing.
-- **`README.md`** — the **Combinators** table (the current public surface) and the
-  **Examples** table (what each script claims to show).
+- **`docs/reference.md`** — the **Combinators** table (the full public surface).
+- **`README.md`** — the **Examples** table (what each script claims to show) and the front-page tour.
 - **`examples/*.py`** — the existing scripts and the house style.
 - **`tests/cross_cutting/test_examples.py`** — the contract every example must
   satisfy (it is auto-discovered and run end-to-end).
@@ -32,7 +32,7 @@ Resolve the work set from `$ARGUMENTS`:
   demonstrating that capability: extend the most fitting existing example, or add
   one dedicated script if the topic is a distinct, teachable theme.
 - **`all`** or **empty** → **sweep**: compare the capabilities demonstrated across
-  `examples/` against the current public surface (the README combinator table and
+  `examples/` against the current public surface (the combinator table in `docs/reference.md` and
   `src/fungeom/primitives/`), list what is *notably* un-demonstrated or shown in a
   now-outdated way, and address the gaps that genuinely earn an example.
 

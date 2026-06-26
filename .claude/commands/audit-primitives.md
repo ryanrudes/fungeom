@@ -43,7 +43,7 @@ interrupted.)
 - Read the facade `resolvers/base.py` — list every classmethod (constructor) and
   fluent method (combinator) it already has.
 - Read its `value.py`, `decidability.py`, and the existing `resolvers/*.py`.
-- Read `P`'s section in `CHECKLIST.md` and its README combinator-table row(s).
+- Read `P`'s section in `CHECKLIST.md` and its `docs/reference.md` combinator-table row(s).
 - Scan **sibling primitives** for parity gaps (an op a sibling has that `P`
   lacks, or vice-versa — e.g. Vec2 vs Vec3).
 
@@ -87,7 +87,7 @@ Per `AGENTS.md`, for **each** op:
 - A **partiality test** for each partial case.
 - A **propagation case** in `tests/cross_cutting/test_propagation.py` for
   **every resolver-typed input position**.
-- A **README** combinator-table row.
+- A **`docs/reference.md`** combinator-table row.
 - New **row(s)** in `P`'s `CHECKLIST.md` table (all columns).
 - PEP 695 typing only; keep the dependency layering acyclic.
 
