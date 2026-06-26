@@ -15,19 +15,25 @@ static face moved by the pose at that instant, blended between samples by interp
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import overload
+
+import numpy as np
 
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.face.decidability import FaceDecision
 from fungeom.primitives.face.resolvers.base import Face
 from fungeom.primitives.face.value import FaceValue
+from fungeom.primitives.frame.value import WORLD_FRAME
 from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.region2.resolvers.base import Region2
+from fungeom.primitives.sampling.resolvers.base import Sampling
 from fungeom.primitives.scalar.resolvers.base import Scalar
+from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.signals.bundle import (
     POINT3_BUNDLE_BLEND,
     SCALAR_BUNDLE_BLEND,
@@ -45,7 +51,6 @@ from fungeom.primitives.signals.series import (
     decide_signal_map,
 )
 from fungeom.primitives.signals.transform import TRANSFORM_BLEND, TransformSignal
-from fungeom.primitives.transform.value import RigidTransform
 
 
 class _FaceBlend:
@@ -173,29 +178,61 @@ class _FaceSignalPlane(PlaneSignal):
         return decide_signal_map(self.source, lambda face: face.plane, PLANE_BLEND)
 
 
+def _transport_cloud(cloud: BundleValue[Point3Value], transform: RigidTransform) -> BundleValue[Point3Value]:
+    """Move every member of a point cloud rigidly by ``transform`` (world-anchored)."""
+    members: dict[Hashable, Point3Value] = {
+        key: Point3Value(coord=transform.apply_point(value.coord), frame=WORLD_FRAME)
+        for key, value in cloud.members.items()
+    }
+    return BundleValue(roster=cloud.roster, members=members)
+
+
 @dataclass(frozen=True, eq=False)
 class _FaceSignalFrame(TransformSignal):
-    """The patch's canonical frame over time (Unresolvable for an empty region)."""
+    """The patch's canonical frame over time = the moving pose applied to the *static* patch frame.
+
+    Transport (``pose ∘ static_frame``), not a re-gauge of the moving plane — so the frame rotates
+    with the pose. Unresolvable for an empty region (no static frame).
+    """
 
     source: FaceSignal
 
     def _decide(self) -> Resolvability[SampledSeries[RigidTransform]]:
-        decided = self.source.decide()
+        decided = self.source.face.frame().decide()  # the static patch frame (Unresolvable if empty)
         if isinstance(decided, Unresolvable):
             return decided
-        if decided.value.values and decided.value.values[0].region.is_empty:
-            return Unresolvable("an empty face has no frame")
-        return decide_signal_map(self.source, lambda face: face.frame(), TRANSFORM_BLEND)
+        static_frame = decided.value
+        return decide_signal_map(self.source.pose, lambda pose: pose.compose(static_frame), TRANSFORM_BLEND)
+
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        static_frame = self.source.face.frame().resolve().matrix  # (4, 4); raises if empty / ungrounded
+        poses = self.source.pose.resolve_over(onto)  # (T, 4, 4); raises off-support — one batched read
+        return poses @ static_frame  # (T, 4, 4) — compose the whole pose stack with the static frame
 
 
 @dataclass(frozen=True, eq=False)
 class _FaceSignalBoundary(Point3BundleSignal):
-    """The patch's footprint vertices in world over time."""
+    """The footprint vertices in world over time = the static vertices transported by the moving pose."""
 
     source: FaceSignal
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
-        return decide_signal_map(self.source, lambda face: face.boundary_cloud(), POINT3_BUNDLE_BLEND)
+        decided = self.source.face.boundary().decide()  # the static footprint vertices (world)
+        if isinstance(decided, Unresolvable):
+            return decided
+        static_cloud = decided.value
+        return decide_signal_map(
+            self.source.pose, lambda pose: _transport_cloud(static_cloud, pose), POINT3_BUNDLE_BLEND
+        )
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        cloud = self.source.face.boundary().resolve()  # BundleValue[Point3Value]; raises if ungrounded
+        vertices = np.array([cloud.members[key].coord for key in cloud.roster], dtype=float).reshape(-1, 3)
+        poses = self.source.pose.resolve_over(onto)  # (T, 4, 4)
+        homogeneous = np.concatenate([vertices, np.ones((vertices.shape[0], 1))], axis=1)  # (K, 4)
+        values = np.einsum("tij,kj->tki", poses, homogeneous)[..., :3]  # (T, K, 3) — one batched transport
+        mask = np.ones((poses.shape[0], vertices.shape[0]), dtype=bool)  # boundary vertices are always present
+        return values, mask
 
 
 @dataclass(frozen=True, eq=False)

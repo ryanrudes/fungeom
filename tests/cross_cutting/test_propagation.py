@@ -912,6 +912,7 @@ CASES: dict[str, Callable[[], object]] = {
     "facesignal.plane": lambda: BAD_FSIG.plane(),
     "facesignal.frame": lambda: BAD_FSIG.frame(),
     "facesignal.boundary": lambda: BAD_FSIG.boundary(),
+    "facesignal.boundary.face": lambda: FaceSignal.of(BAD_FACE, GOOD_TSIG).boundary(),
     "facesignal.clearance.signal": lambda: BAD_FSIG.clearance(GOOD_PSIG),
     "facesignal.clearance.point": lambda: GOOD_FSIG.clearance(BAD_PSIG),
     "facesignal.clearance_cloud.signal": lambda: BAD_FSIG.clearance(GOOD_PBS),
