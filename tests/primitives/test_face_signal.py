@@ -12,6 +12,7 @@ from fungeom import (
     Interval,
     Plane,
     Point3,
+    Point3Bundle,
     Point3BundleSignal,
     Point3Signal,
     RigidTransform,
@@ -101,3 +102,31 @@ def test_blend_across_a_flipped_patch_is_unresolvable() -> None:
     )
     moving = FaceSignal.of(patch, flip)
     assert isinstance(moving.at(1.0).decide(), Unresolvable)  # FACE_BLEND over opposed normals
+
+
+def test_boundary_and_frame_transport_rotation_in_both_paths() -> None:
+    # the fix: a rotating pose must rotate the footprint vertices (R·v + t), not just translate to
+    # the moved centroid — and the vectorized readback must agree with the per-instant (_decide) path.
+    pts = Point3Bundle.from_map({"a": Point3.at(0, 0, 0), "b": Point3.at(1, 0, 0), "c": Point3.at(0, 1, 0)})
+    face = Face.on(pts.fit_plane(), Region2.hull(pts.in_frame(pts.fit_plane())))
+    rot = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1.0]])
+    trans = np.array([1.0, 2.0, 3.0])
+    m = np.eye(4)
+    m[:3, :3] = rot
+    m[:3, 3] = trans
+    fs = FaceSignal.of(face, TransformSignal.from_matrices(np.array([0.0]), m[None]))
+    grid = Sampling.at_times([0.0])
+
+    static_verts = np.array([face.boundary().at(k).resolve().coord for k in range(3)])
+    got = fs.boundary().resolve_over(grid)[0][0]  # (K, 3)
+    assert np.allclose(np.sort(got, axis=0), np.sort(static_verts @ rot.T + trans, axis=0))  # R·v + t
+    # the _decide path (via at) reproduces the vectorized readback
+    at_cloud = fs.boundary().at(0.0).resolve()
+    assert np.allclose([at_cloud.members[k].coord for k in at_cloud.roster], got)
+
+    # frame transports rigidly: rotation = R · static_frame.R, origin = R · static_origin + t
+    static_frame = face.frame().resolve()
+    frame = fs.frame().resolve_over(grid)[0]
+    assert np.allclose(frame[:3, :3], rot @ static_frame.rotation)
+    assert np.allclose(frame[:3, 3], rot @ static_frame.translation + trans)
+    assert np.allclose(fs.frame().at(0.0).resolve().matrix, frame)  # _decide path matches
