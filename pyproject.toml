@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.25", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "fungeom"
-version = "0.1.0"
+dynamic = ["version"]                # derived from the latest vX.Y.Z git tag (hatch-vcs)
 description = "Functional geometry as an immutable, decidable resolver graph."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -37,10 +37,21 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/ryanrudes/fungeom"
+Documentation = "https://github.com/ryanrudes/fungeom/wiki"
 Issues = "https://github.com/ryanrudes/fungeom/issues"
+Changelog = "https://github.com/ryanrudes/fungeom/blob/main/CHANGELOG.md"
+
+# Version comes from git tags (hatch-vcs). No tag yet -> fall back to the baseline below, so a
+# tag-less checkout still builds; once a `vX.Y.Z` tag exists it drives the version exactly.
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fungeom"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/fungeom", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [tool.ruff]
 line-length = 120
