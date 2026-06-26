@@ -104,9 +104,18 @@ from fungeom.primitives import (
     Vec3,
     Vec3Signal,
 )
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
+
 from fungeom.viz import render_tree, resolver_tree
 
+try:
+    __version__ = _package_version("fungeom")
+except PackageNotFoundError:  # pragma: no cover - only hit running from an uninstalled source tree
+    __version__ = "0.0.0+unknown"
+
 __all__ = [
+    "__version__",
     # primitives (facades)
     "Bool",
     "Scalar",

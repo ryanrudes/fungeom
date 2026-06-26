@@ -1,0 +1,56 @@
+name: Release
+
+# Publishes to PyPI when a version tag is pushed. The version itself comes from the tag
+# (hatch-vcs), so the tag is the single source of truth — no version to bump by hand.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Publishing uses PyPI Trusted Publishing (OIDC): no API token is stored anywhere. One-time PyPI
+# setup is required first — see RELEASING.md.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # hatch-vcs needs the tag to compute the version
+
+      - name: Set up uv + Python 3.13
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Validate distribution metadata
+        run: uvx twine check dist/*
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fungeom
+    permissions:
+      id-token: write  # OIDC token for Trusted Publishing — no stored secret
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

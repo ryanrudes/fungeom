@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history + tags so hatch-vcs can derive the version on install
 
       - name: Set up uv + Python 3.13
         uses: astral-sh/setup-uv@v5
@@ -33,3 +35,29 @@ jobs:
 
       - name: Tests + 100% coverage gate
         run: pytest --cov=fungeom
+
+  build:
+    # Validate that the package actually builds and its metadata is clean — so a packaging
+    # mistake is caught here, not at release time.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # hatch-vcs reads tags to compute the version
+
+      - name: Set up uv + Python 3.13
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Validate distribution metadata
+        run: uvx twine check dist/*
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
