@@ -72,7 +72,7 @@ uv pip install -e '.[dev]'
 | **Geometry** | `Scalar`, `Vec2/3`, `Direction3`, `Transform`, `Frame`, `Point3`, `Plane`, `Line`, `Ray`, `Segment` (+ 2D siblings) | points, frames, rigid motion — the classic kit, made decidable |
 | **Logic** | `Bool` | three-valued predicates with strict propagation |
 | **Time** | `Duration`, `Instant`, `Interval`, `Coverage`, `Timeline`, `Sampling`, `TimeMap`, `TimeWarp` | durations, clocks, gappy supports, alignment |
-| **Signals** | `ScalarSignal`, `Vec3Signal`, …, `PlaneSignal`, `BoolSignal` | values that vary over time — partial functions of a clock |
+| **Signals** | `ScalarSignal`, `Vec3Signal`, …, `PlaneSignal`, `BoolSignal`, `FaceSignal` | values that vary over time — partial functions of a clock (incl. a *moving patch*) |
 | **Collections** | `…Bundle`, `…BundleSignal`, `Roster`, `RosterMap` | keyed sets (marker clouds) and sets-over-time, occlusion-aware |
 | **Regions** | `Region2`, `Face`, `Point2Bundle` | bounded planar areas, the balance margin, bounded contact patches |
 

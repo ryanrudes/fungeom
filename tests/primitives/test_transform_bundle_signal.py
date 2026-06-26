@@ -169,9 +169,9 @@ def test_at_a_temporal_gap_is_unresolvable() -> None:
     assert np.isclose(_angle(gapped.at(5.5).at("J").resolve()), 55.0)  # interpolates inside the later span
 
 
-def test_no_key_projection() -> None:
-    # Unlike Point3BundleSignal, there is deliberately no entity-axis key() slice — the
-    # partial SE(3) blend (strict over op-failure) breaks the commuting square. Query a
-    # single joint at an instant via at(t).at(k) instead.
-    assert not hasattr(_clip(), "key")
-    assert np.isclose(_angle(_clip().at(1.0).at("J0").resolve()), 45.0)
+def test_key_projection_matches_at() -> None:
+    # The entity-axis slice key(j) pulls one joint's pose trajectory; the commuting square holds
+    # under linear interpolation (at(t).at(j) == key(j).at(t)), both Unresolvable together at antipodes.
+    clip = _clip()
+    assert np.isclose(_angle(clip.key("J0").at(1.0).resolve()), 45.0)
+    assert np.allclose(clip.at(1.0).at("J0").resolve().rotation, clip.key("J0").at(1.0).resolve().rotation)

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
 
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
@@ -24,6 +24,7 @@ from fungeom.primitives.duration.resolvers.base import Duration
 from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.interval.resolvers.base import Interval
 from fungeom.primitives.sampling.resolvers.base import Sampling
+from fungeom.primitives.sampling.value import as_times
 from fungeom.primitives.signals.boundary import Boundary
 from fungeom.primitives.signals.interpolation import Interpolation
 from fungeom.primitives.signals.scalar import ScalarSignal
@@ -107,6 +108,30 @@ class TransformSignal(Signal[RigidTransform]):
     ) -> TransformSignal:
         """A signal sampled at explicit ``times`` (sugar over :meth:`sampled`)."""
         return cls.sampled(Sampling.at_times(times), values, via=via, outside=outside, max_gap=max_gap)
+
+    @classmethod
+    def from_matrices(
+        cls,
+        times: ArrayLike,
+        matrices: ArrayLike,
+        via: Interpolation = Interpolation.linear,
+        outside: Boundary = Boundary.undefined,
+        max_gap: float | None = None,
+    ) -> TransformSignal:
+        """A pose signal from a dense ``(T, 4, 4)`` array of homogeneous matrices over ``times``.
+
+        The **batch carrier**: no per-frame ``Transform`` wrappers are built to *construct* it, and
+        :meth:`resolve_over` reads it back vectorized (one batched slerp + a numpy lerp), so a
+        thousands-of-frames pose track stays O(T) in numpy rather than O(T) Python objects. Same
+        semantics as :meth:`from_samples` of the equivalent ``RigidTransform``s.
+        """
+        return _MatrixTransformSignal(
+            times=as_times(times),
+            matrices=np.asarray(matrices, dtype=float),
+            interpolation=via,
+            boundary=outside,
+            max_gap=max_gap,
+        )
 
     def at(self, instant: Instant | float) -> Transform:
         """The pose at ``instant`` (Unresolvable off-domain or across opposed orientations)."""
@@ -212,6 +237,53 @@ class _AngularVelocityVec3Signal(Vec3Signal):
             return as_vec3(relative.as_rotvec() / dt)
 
         return decide_derivative(self.source, slope, VEC3_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _MatrixTransformSignal(TransformSignal):
+    """A pose signal backed by a dense ``(T, 4, 4)`` matrix array — the vectorized batch carrier.
+
+    ``_decide`` materializes ``RigidTransform``s lazily (so ``at`` / lifts work normally), but
+    :meth:`resolve_over` reads the raw arrays back with a single batched slerp + a numpy lerp,
+    bypassing per-frame Python objects entirely.
+    """
+
+    times: np.ndarray
+    matrices: np.ndarray
+    interpolation: Interpolation
+    boundary: Boundary
+    max_gap: float | None
+
+    def _decide(self) -> Resolvability[SampledSeries[RigidTransform]]:
+        values = tuple(RigidTransform.from_matrix(matrix) for matrix in self.matrices)
+        return decide_sampled(
+            Sampling.at_times(self.times), values, self.interpolation, self.boundary, TRANSFORM_BLEND, self.max_gap
+        )
+
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        # Fast path — provably equivalent to the generic resample-and-read only when reconstruction
+        # is the default linear+undefined, the grid has no gaps, the times are valid, and every
+        # target lands in-domain. Anything else falls back to the proven generic path (which also
+        # raises UnresolvableError off-domain, exactly as boundary=undefined requires).
+        decided = onto.decide()
+        monotonic = self.times.shape[0] >= 2 and bool(np.all(np.diff(self.times) > 0.0))
+        if (
+            monotonic
+            and self.interpolation is Interpolation.linear
+            and self.boundary is Boundary.undefined
+            and self.max_gap is None
+            and isinstance(decided, Resolvable)
+        ):
+            target = np.asarray(decided.value.times, dtype=float)
+            lo, hi = float(self.times[0]), float(self.times[-1])
+            if float(target.min()) >= lo and float(target.max()) <= hi:
+                rotations = Rotation.from_matrix(self.matrices[:, :3, :3])
+                out = np.tile(np.eye(4), (target.shape[0], 1, 1))
+                out[:, :3, :3] = Slerp(self.times, rotations)(target).as_matrix()  # one batched slerp
+                for axis in range(3):
+                    out[:, axis, 3] = np.interp(target, self.times, self.matrices[:, axis, 3])  # numpy lerp
+                return out
+        return super().resolve_over(onto)
 
 
 @dataclass(frozen=True, eq=False)

@@ -998,6 +998,7 @@ CASES: dict[str, Callable[[], object]] = {
     "tbsignal.restrict.to": lambda: GOOD_TBS.restrict(BAD_INT),
     "tbsignal.shift.source": lambda: BAD_TBS.shift(GOOD_DUR),
     "tbsignal.shift.by": lambda: GOOD_TBS.shift(BAD_DUR),
+    "tbsignal.key": lambda: BAD_TBS.key(0),
 }
 
 
