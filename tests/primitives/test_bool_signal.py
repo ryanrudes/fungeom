@@ -118,3 +118,12 @@ def test_composed_at_is_pointwise_and_strict() -> None:
     # a gap in one operand makes the conjunction undefined there (strict, not Kleene)
     gappy = ScalarSignal.from_samples([0, 1, 3, 4], [1, -1, -1, 1], max_gap=1.5).lt(0.0)  # gap over (1,3)
     assert isinstance((a & gappy).at(2.0).decide(), Unresolvable)
+
+
+def test_last_true_is_the_release_instant() -> None:
+    contact = _height().lt(0.0)  # true on [1.5, 2.5]
+    assert contact.first_true().resolve() == 1.5  # touchdown
+    assert contact.last_true().resolve() == 2.5  # release / lift-off
+    # never true → Unresolvable, like first_true
+    never = ScalarSignal.from_samples([0, 1], [1, 2]).lt(0.0)
+    assert isinstance(never.last_true().decide(), Unresolvable)

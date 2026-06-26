@@ -130,3 +130,14 @@ def test_angular_velocity_uses_the_world_frame_convention() -> None:
     # the axes don't commute, so the body-frame convention is genuinely different here — a regression
     # from R_b·R_aᵀ to R_aᵀ·R_b would flip the answer and fail the assertion above
     assert not np.allclose(world(1, 2), body(1, 2), atol=1e-3)
+
+
+def test_linear_velocity() -> None:
+    poses = TransformSignal.from_samples(
+        [0.0, 2.0],
+        [RigidTransform.from_translation([0, 0, 0]), RigidTransform.from_translation([4, 0, 0])],
+    )
+    assert np.allclose(poses.velocity().at(1.0).resolve(), [2, 0, 0])  # 4 units over 2 s
+    # the linear half of the twist needs ≥ 2 samples, like angular_velocity
+    single = TransformSignal.from_samples([0.0], [RigidTransform.identity()])
+    assert isinstance(single.velocity().decide(), Unresolvable)

@@ -659,6 +659,7 @@ CASES: dict[str, Callable[[], object]] = {
     "boolsig.when_true": lambda: BAD_BOOLSIG.when_true(),
     "boolsig.when_false": lambda: BAD_BOOLSIG.when_false(),
     "boolsig.first_true": lambda: BAD_BOOLSIG.first_true(),
+    "boolsig.last_true": lambda: BAD_BOOLSIG.last_true(),
     "boolsig.and.a": lambda: BAD_BOOLSIG.and_(GOOD_BOOLSIG),
     "boolsig.and.b": lambda: GOOD_BOOLSIG.and_(BAD_BOOLSIG),
     "boolsig.or": lambda: BAD_BOOLSIG.or_(GOOD_BOOLSIG),
@@ -698,6 +699,7 @@ CASES: dict[str, Callable[[], object]] = {
     "pbsignal.transformed_by_bundle.signal": lambda: BAD_PBS.transformed_by(GOOD_TBS),
     "pbsignal.transformed_by_bundle.poses": lambda: GOOD_PBS.transformed_by(BAD_TBS),
     "pbsignal.fit_plane": lambda: BAD_PBS.fit_plane(),
+    "pbsignal.centroid": lambda: BAD_PBS.centroid(),
     # plane signal (T8 — moving patch surface)
     "plsignal.sampled.sampling": lambda: PlaneSignal.sampled(BAD_SAMP, [_PLN]),
     "plsignal.at.signal": lambda: BAD_PLSIG.at(GOOD_I),
@@ -755,6 +757,7 @@ CASES: dict[str, Callable[[], object]] = {
     "tsignal.defined_at.signal": lambda: BAD_TSIG.defined_at(GOOD_I),
     "tsignal.defined_at.instant": lambda: GOOD_TSIG.defined_at(BAD_I),
     "tsignal.angular_velocity": lambda: BAD_TSIG.angular_velocity(),
+    "tsignal.velocity": lambda: BAD_TSIG.velocity(),
     "tsignal.angular_speed": lambda: BAD_TSIG.angular_speed(),
     # point3 signal (framed; grounding partiality)
     "psignal.at.signal": lambda: BAD_PSIG.at(GOOD_I),

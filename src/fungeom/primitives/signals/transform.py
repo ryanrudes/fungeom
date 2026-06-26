@@ -152,13 +152,22 @@ class TransformSignal(Signal[RigidTransform]):
         """Apply ``transform`` to this pose at each instant (→ ``TransformSignal``; the unary lift)."""
         return _LiftedTransformSignal(sources=(self,), combine=transform)
 
+    def velocity(self) -> Vec3Signal:
+        """The linear velocity of the pose's origin over time (→ ``Vec3Signal``; units/s).
+
+        Finite differences of the translation part on the sample grid — the linear half of the
+        spatial twist, the companion to :meth:`angular_velocity`. Exact on the grid; Unresolvable
+        with fewer than two samples.
+        """
+        return _LinearVelocityVec3Signal(source=self)
+
     def angular_velocity(self) -> Vec3Signal:
         """The world-frame angular velocity over time (→ ``Vec3Signal``; rad/s).
 
         Finite differences of the rotation on SO(3): the relative rotation between bracketing
         samples, mapped to a rotation vector by the closed-form matrix log (Rodrigues), over the
         elapsed time. Exact on the grid; Unresolvable with fewer than two samples. The translation
-        is ignored — pair with :meth:`Point3Signal.velocity` for linear motion.
+        is ignored — pair with :meth:`velocity` for linear motion.
         """
         return _AngularVelocityVec3Signal(source=self)
 
@@ -176,6 +185,19 @@ class _LiftedTransformSignal(TransformSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[RigidTransform]]:
         return decide_lifted_n(self.sources, lambda t: self.combine(*(s.at(t) for s in self.sources)), TRANSFORM_BLEND)
+
+
+@dataclass(frozen=True, eq=False)
+class _LinearVelocityVec3Signal(Vec3Signal):
+    """The linear velocity of a pose signal's origin — finite differences of its translation part."""
+
+    source: TransformSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[Float3]]:
+        def slope(a: RigidTransform, b: RigidTransform, dt: float) -> Float3:
+            return as_vec3((b.translation - a.translation) / dt)
+
+        return decide_derivative(self.source, slope, VEC3_BLEND)
 
 
 @dataclass(frozen=True, eq=False)

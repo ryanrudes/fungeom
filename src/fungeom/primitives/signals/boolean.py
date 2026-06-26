@@ -128,6 +128,15 @@ class BoolSignal(Resolver[BoolSeries]):
         """The earliest instant the predicate holds (→ ``Instant``; Unresolvable if never)."""
         return _BoolSignalFirstTrue(signal=self)
 
+    def last_true(self) -> Instant:
+        """The latest instant the predicate holds (→ ``Instant``; Unresolvable if never).
+
+        The release / lift-off companion to :meth:`first_true` — e.g. the end of the last contact
+        span. (For a strict crossing the span is closed, so this is the crossing instant; ``at`` is
+        the exact pointwise authority there.)
+        """
+        return _BoolSignalLastTrue(signal=self)
+
     def and_(self, other: BoolSignal) -> BoolSignal:
         """Strict conjunction — defined only where *both* are (→ ``BoolSignal``)."""
         return _CombinedBoolSignal(a=self, b=other, op="and")
@@ -291,6 +300,21 @@ class _BoolSignalFirstTrue(Instant):
                 if series.true.is_empty:
                     return Unresolvable("the predicate is never true")
                 return Resolvable(series.true.intervals[0].start)
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+@dataclass(frozen=True, eq=False)
+class _BoolSignalLastTrue(Instant):
+    signal: BoolSignal
+
+    def _decide(self) -> InstantDecision:
+        match self.signal.decide():
+            case Resolvable(series):
+                if series.true.is_empty:
+                    return Unresolvable("the predicate is never true")
+                return Resolvable(series.true.intervals[-1].end)
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover

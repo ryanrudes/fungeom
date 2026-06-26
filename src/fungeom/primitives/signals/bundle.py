@@ -300,6 +300,40 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         """
         return _FittedPlaneSignal(source=self, tolerance=tolerance)
 
+    def centroid(self) -> Point3Signal:
+        """The cloud's centroid at every frame (→ ``Point3Signal``) — the CoM / cluster-centre track.
+
+        The over-time companion to the static ``Point3Bundle.centroid`` (mean of the *present*
+        members, world-anchored); read the same way the source is. A frame with no present member
+        makes the whole signal ``Unresolvable``.
+        """
+        return _BundleCentroidPoint3Signal(source=self)
+
+
+@dataclass(frozen=True, eq=False)
+class _BundleCentroidPoint3Signal(Point3Signal):
+    """The per-frame centroid of a moving point cloud — a ``Point3Signal`` of cloud centres."""
+
+    source: Point3BundleSignal
+
+    def _decide(self) -> Resolvability[SampledSeries[Point3Value]]:
+        decided = self.source.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        series = decided.value
+        centres: list[Point3Value] = []
+        for frame in series.values:
+            present = [frame.members[key] for key in frame.support()]
+            if not present:
+                return Unresolvable("the centroid is undefined at a frame with no present members")
+            mean = np.mean([member.coord for member in present], axis=0)
+            centres.append(Point3Value(coord=mean, frame=WORLD_FRAME))
+        return Resolvable(
+            SampledSeries(
+                series.times, tuple(centres), series.interpolation, series.boundary, POINT3_BLEND, series.support
+            )
+        )
+
 
 @dataclass(frozen=True, eq=False)
 class _TransformedPoint3BundleSignal(Point3BundleSignal):

@@ -261,3 +261,16 @@ def test_transformed_by_per_joint_poses() -> None:
     world = cloud.transformed_by(poses)  # each marker by its own joint's moving pose
     assert np.allclose(world.at(2.0).at("a").resolve().coord, [11, 0, 0])
     assert np.allclose(world.at(2.0).at("b").resolve().coord, [0, 11, 0])
+
+
+def test_centroid_is_the_cloud_centre_track() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 2.0], [[[0, 0, 0], [2, 0, 0]], [[0, 0, 0], [4, 0, 0]]], keys=["a", "b"]
+    )
+    assert np.allclose(cloud.centroid().at(0.0).resolve().coord, [1, 0, 0])  # mean of (0,0,0),(2,0,0)
+    assert np.allclose(cloud.centroid().at(2.0).resolve().coord, [2, 0, 0])  # mean of (0,0,0),(4,0,0)
+    # a frame with no present member makes the centroid track Unresolvable
+    occluded = Point3BundleSignal.from_frames(
+        [0.0, 1.0], [[[0, 0, 0]], [[1, 0, 0]]], keys=["a"], present=[[False], [True]]
+    )
+    assert isinstance(occluded.centroid().decide(), Unresolvable)
