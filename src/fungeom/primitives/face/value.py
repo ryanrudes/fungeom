@@ -46,5 +46,12 @@ class FaceValue:
         """The 3-D distance from ``p`` to the nearest point of the bounded patch (raises if empty)."""
         return float(np.linalg.norm(as_vec3(p) - self.closest_point(p)))
 
+    def contains(self, p: Float3) -> bool:
+        """Whether ``p`` projects into the patch footprint — the region contains its in-plane projection.
+
+        The support-polygon membership test (is the foot / CoM *over* the patch), independent of the
+        normal-direction offset. ``False`` for an empty region (no footprint)."""
+        return self.region.contains(self.plane.to_local(as_vec3(p)))
+
     def __repr__(self) -> str:
         return f"FaceValue(plane={self.plane!r}, region={self.region!r})"

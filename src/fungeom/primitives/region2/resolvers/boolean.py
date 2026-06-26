@@ -60,3 +60,14 @@ class DifferenceRegion2(Region2):
 
     def _decide(self) -> Region2Decision:
         return _binary(self.a, self.b, lambda ra, rb: from_shapely(to_shapely(ra).difference(to_shapely(rb))))
+
+
+@dataclass(frozen=True, eq=False)
+class SymmetricDifferenceRegion2(Region2):
+    """The symmetric difference of two regions (→ ``Region2``; the area in exactly one of them)."""
+
+    a: Region2
+    b: Region2
+
+    def _decide(self) -> Region2Decision:
+        return _binary(self.a, self.b, lambda ra, rb: from_shapely(to_shapely(ra).symmetric_difference(to_shapely(rb))))

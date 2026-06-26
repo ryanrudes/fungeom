@@ -12,7 +12,7 @@ the *present* members.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -38,6 +38,7 @@ from fungeom.primitives.point2.resolvers.base import Point2
 from fungeom.primitives.point2.value import Point2Value
 from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
+from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.transform2.resolvers.base import Transform2
 
 
@@ -130,6 +131,30 @@ class Point2Bundle(Bundle[Point2Value]):
         """The key-aligned distances from this cloud to ``other`` (→ ``ScalarBundle``)."""
         return _DistanceScalarBundle2(a=self, b=other)
 
+    def map_scalar(self, func: Callable[[Point2], Scalar]) -> ScalarBundle:
+        """Apply ``func`` to each present member (→ ``ScalarBundle``) — the open per-member escape hatch."""
+        return _MappedScalarBundle2(source=self, func=func)
+
+    def map_point(self, func: Callable[[Point2], Point2]) -> Point2Bundle:
+        """Apply ``func`` to each present member (→ ``Point2Bundle``); the op's partiality flows."""
+        return _MappedPoint2Bundle(source=self, func=func)
+
+    def distances_to(self, point: Point2) -> ScalarBundle:
+        """Each present member's distance to one ``point`` (a one-query broadcast → ``ScalarBundle``)."""
+        return self.map_scalar(lambda member: member.distance_to(point))
+
+    def closest_point_to(self, point: Point2) -> Point2:
+        """The present member nearest ``point`` (→ ``Point2``); Unresolvable over an empty cloud."""
+        return _ClosestPointInBundle2(cloud=self, query=point)
+
+    def nearest_to(self, point: Point2) -> Roster:
+        """The key of the present member nearest ``point``, as a singleton :class:`Roster`.
+
+        Composes :meth:`distances_to` with :meth:`ScalarBundle.argmin` (empty → Unresolvable, ties →
+        first in roster order); ``cloud.where(cloud.nearest_to(p))`` slices that marker out.
+        """
+        return self.distances_to(point).argmin()
+
     def bounds(self) -> Point2Bundle:
         """The axis-aligned bounding box as a ``{'min', 'max'}`` corner cloud (→ ``Point2Bundle``; Unresolvable if empty)."""
         return _Point2BundleBounds(source=self)
@@ -219,6 +244,50 @@ class _DistanceScalarBundle2(ScalarBundle):
 
     def _decide(self) -> BundleDecision[float]:
         return decide_zipped(self.a, self.b, lambda key: self.a.at(key).distance_to(self.b.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _MappedScalarBundle2(ScalarBundle):
+    """Each present member of ``source`` mapped through ``func`` to a scalar (the generic escape hatch)."""
+
+    source: Point2Bundle
+    func: Callable[[Point2], Scalar]
+
+    def _decide(self) -> BundleDecision[float]:
+        return decide_mapped(self.source, lambda key: self.func(self.source.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _MappedPoint2Bundle(Point2Bundle):
+    """Each present member of ``source`` mapped through ``func`` to a point."""
+
+    source: Point2Bundle
+    func: Callable[[Point2], Point2]
+
+    def _decide(self) -> BundleDecision[Point2Value]:
+        return decide_mapped(self.source, lambda key: self.func(self.source.at(key)))
+
+
+@dataclass(frozen=True, eq=False)
+class _ClosestPointInBundle2(Point2):
+    """The present member of ``cloud`` nearest the ``query`` point."""
+
+    cloud: Point2Bundle
+    query: Point2
+
+    def _decide(self) -> Point2Decision:
+        match self.cloud.decide(), self.query.decide():
+            case (Resolvable(collection), Resolvable(query)):
+                present = [collection.members[key] for key in collection.support()]
+                if not present:
+                    return Unresolvable("closest_point_to over an empty bundle is undefined")
+                nearest = min(present, key=lambda member: float(np.sum((member.coord - query.coord) ** 2)))
+                return Resolvable(Point2Value(coord=nearest.coord, frame=WORLD_FRAME2))
+            case (Unresolvable() as bad, _):
+                return bad
+            case (_, Unresolvable() as bad):
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 @dataclass(frozen=True, eq=False)

@@ -289,3 +289,37 @@ def test_clockwise_wound_region_is_not_silently_emptied() -> None:
     assert np.isclose(cw_square.area(), 1.0)  # the value type already reports it as a unit square
     assert np.isclose(to_shapely(cw_square).area, 1.0)  # …and the bridge agrees (was 0.0 / empty)
     assert not from_shapely(to_shapely(cw_square)).is_empty
+
+
+def test_perimeter() -> None:
+    assert Region2.rectangle(4, 4).perimeter().resolve() == 16.0  # 4 sides of length 4
+    assert Region2.empty.perimeter().resolve() == 0.0  # total
+    # a holey region counts the hole's boundary too
+    holey = Region2.rectangle(6, 6).difference(Region2.rectangle(2, 2))  # outer 24 + hole 8
+    assert np.isclose(holey.perimeter().resolve(), 24.0 + 8.0)
+
+
+def test_symmetric_difference() -> None:
+    a = Region2.rectangle(4, 4)  # [-2,2]², area 16
+    b = Region2.rectangle(4, 4, center=(3, 0))  # partial overlap (overlap area 4)
+    assert a.symmetric_difference(b).area().resolve() == 24.0  # 16 + 16 − 2·4
+    # symmetric difference with the empty region is the region itself
+    assert a.symmetric_difference(Region2.empty).resolve().approx_equal(a.resolve())
+
+
+def test_region_predicates() -> None:
+    a = Region2.rectangle(4, 4)  # [-2,2]²
+    assert a.intersects(Region2.rectangle(4, 4, center=(3, 0))).resolve() is True  # overlap
+    assert a.intersects(Region2.rectangle(2, 2, center=(20, 20))).resolve() is False  # disjoint
+    assert a.intersects(Region2.rectangle(4, 4, center=(4, 0))).resolve() is True  # boundary touch counts
+    assert a.contains_region(Region2.rectangle(2, 2)).resolve() is True  # b ⊂ a
+    assert a.contains_region(a).resolve() is True  # reflexive (closed ⊆)
+    assert a.contains_region(Region2.rectangle(4, 4, center=(3, 0))).resolve() is False  # only partial
+
+
+def test_closest_point_clamps_into_the_region() -> None:
+    a = Region2.rectangle(4, 4)  # [-2,2]²
+    assert a.closest_point(Point2.at(1, 1)).resolve().approx_equal(Point2.at(1, 1).resolve())  # inside → itself
+    assert a.closest_point(Point2.at(5, 0)).resolve().approx_equal(Point2.at(2, 0).resolve())  # outside → clamped
+    # an empty region has no closest point
+    assert isinstance(Region2.empty.closest_point(Point2.at(0, 0)).decide(), Unresolvable)

@@ -91,6 +91,12 @@ class Region2(Resolver[Region2Value]):
 
         return Region2Area(region=self)
 
+    def perimeter(self) -> Scalar:
+        """This region's total boundary length — every ring, outer and holes (→ ``Scalar``; ``0`` if empty)."""
+        from fungeom.primitives.region2.resolvers.perimeter import Region2Perimeter
+
+        return Region2Perimeter(region=self)
+
     def centroid(self) -> Point2:
         """The area-weighted centroid (→ ``Point2``; Unresolvable for an empty / zero-area region)."""
         from fungeom.primitives.region2.resolvers.centroid import Region2Centroid
@@ -125,6 +131,28 @@ class Region2(Resolver[Region2Value]):
 
         return Region2NearestBoundaryPoint(region=self, point=point)
 
+    def closest_point(self, point: Point2) -> Point2:
+        """The point of this region closest to ``point`` (→ ``Point2``; Unresolvable if empty).
+
+        The clamp-into-region op: an *interior* query is returned unchanged; an exterior one lands
+        on the boundary. (Contrast :meth:`nearest_boundary_point`, which always lands on the edge.)
+        """
+        from fungeom.primitives.region2.resolvers.closest_point import Region2ClosestPoint
+
+        return Region2ClosestPoint(region=self, point=point)
+
+    def intersects(self, other: Region2) -> Bool:
+        """Whether this region and ``other`` share any point — boundary contact included (→ ``Bool``)."""
+        from fungeom.primitives.region2.resolvers.predicates import Region2Intersects
+
+        return Region2Intersects(a=self, b=other)
+
+    def contains_region(self, other: Region2) -> Bool:
+        """Whether this region fully contains ``other`` — closed ⊆, boundary contact counts (→ ``Bool``)."""
+        from fungeom.primitives.region2.resolvers.predicates import Region2ContainsRegion
+
+        return Region2ContainsRegion(a=self, b=other)
+
     def union(self, other: Region2) -> Region2:
         """The union of this region and ``other`` (→ ``Region2``; general, via GEOS).
 
@@ -150,6 +178,15 @@ class Region2(Resolver[Region2Value]):
         from fungeom.primitives.region2.resolvers.boolean import DifferenceRegion2
 
         return DifferenceRegion2(a=self, b=other)
+
+    def symmetric_difference(self, other: Region2) -> Region2:
+        """The area in exactly one of this region and ``other`` (→ ``Region2``; general, via GEOS).
+
+        Completes the boolean family: ``(a ∪ b) − (a ∩ b)``, computed directly. Total.
+        """
+        from fungeom.primitives.region2.resolvers.boolean import SymmetricDifferenceRegion2
+
+        return SymmetricDifferenceRegion2(a=self, b=other)
 
     def sample(self, count: int) -> Point2Bundle:
         """``count`` points spaced evenly by arc length around the boundary (→ ``Point2Bundle``).

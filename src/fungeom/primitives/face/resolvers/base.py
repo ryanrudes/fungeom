@@ -10,6 +10,7 @@ the patch (where the infinite-`Plane` distance would lie). Above ``plane`` / ``r
 from __future__ import annotations
 
 from fungeom.core.resolver import Resolver
+from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.face.value import FaceValue
 from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.point3.resolvers.base import Point3
@@ -70,3 +71,13 @@ class Face(Resolver[FaceValue]):
         from fungeom.primitives.face.resolvers.clearance import FaceClearance
 
         return FaceClearance(face=self, point=point)
+
+    def contains(self, point: Point3) -> Bool:
+        """Whether ``point`` projects into this patch's footprint (→ ``Bool``).
+
+        The support-polygon membership test — is the foot / CoM *over* the patch — independent of
+        the normal-direction offset. Total (``False`` for an empty patch).
+        """
+        from fungeom.primitives.face.resolvers.contains import FaceContains
+
+        return FaceContains(face=self, point=point)

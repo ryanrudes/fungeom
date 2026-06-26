@@ -124,3 +124,27 @@ def test_empty_fold_is_unresolvable() -> None:
     decision = Point2Bundle.of([]).centroid().decide()
     assert isinstance(decision, Unresolvable)
     assert "empty bundle" in decision.reason
+
+
+def test_map_and_query_ops() -> None:
+    cloud = Point2Bundle.from_array([[0, 0], [3, 0], [0, 4]], keys=["a", "b", "c"])
+    origin = Point2.at(0, 0)
+    # distances_to: each member's distance to one query point
+    distances = cloud.distances_to(origin)
+    assert distances.at("a").resolve() == 0.0
+    assert distances.at("b").resolve() == 3.0
+    assert distances.at("c").resolve() == 4.0
+    # closest_point_to / nearest_to: the nearest member + its key
+    assert cloud.closest_point_to(Point2.at(2.9, 0)).resolve().approx_equal(Point2.at(3, 0).resolve())
+    assert set(cloud.nearest_to(Point2.at(2.9, 0)).resolve()) == {"b"}
+    # map_scalar / map_point: the per-member escape hatches
+    dists = cloud.map_scalar(lambda p: p.distance_to(origin))
+    assert dists.at("c").resolve() == 4.0
+    shifted = cloud.map_point(lambda p: p.translate((1, 1)))
+    assert shifted.at("a").resolve().approx_equal(Point2.at(1, 1).resolve())
+
+
+def test_closest_and_nearest_over_empty_are_unresolvable() -> None:
+    empty = Point2Bundle.from_array([[0, 0]], keys=["a"]).where([])  # no present members
+    assert isinstance(empty.closest_point_to(Point2.at(0, 0)).decide(), Unresolvable)
+    assert isinstance(empty.nearest_to(Point2.at(0, 0)).decide(), Unresolvable)

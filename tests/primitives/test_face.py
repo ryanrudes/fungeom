@@ -69,3 +69,13 @@ def test_propagates_an_ungrounded_plane() -> None:
 
 def test_repr() -> None:
     assert "FaceValue" in repr(_patch().resolve())
+
+
+def test_contains_is_footprint_membership() -> None:
+    patch = _patch()  # the z=0 plane carrying a 4×2 rectangle
+    assert patch.contains(Point3.at(1, 0.5, 5.0)).resolve() is True  # projects inside (normal offset ignored)
+    assert patch.contains(Point3.at(1, 0.5, -3.0)).resolve() is True  # …from either side
+    assert patch.contains(Point3.at(10, 0, 0)).resolve() is False  # projects outside the footprint
+    # total — an empty patch has no footprint, so contains is False (not Unresolvable)
+    empty = Face.on(Plane.through(Point3.at(0, 0, 0), Direction3.of(0, 0, 1)), Region2.empty)
+    assert empty.contains(Point3.at(0, 0, 0)).resolve() is False

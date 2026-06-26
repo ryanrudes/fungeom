@@ -148,6 +148,14 @@ class Region2Value:
         """The total area (outer rings minus holes); ``0`` for the empty region."""
         return abs(sum(ring_signed_area(ring) for ring in self.rings))
 
+    def perimeter(self) -> float:
+        """The total boundary length (every ring — outer and holes); ``0`` for the empty region."""
+        return float(
+            sum(
+                float(np.hypot(*(ring[(i + 1) % len(ring)] - ring[i]))) for ring in self.rings for i in range(len(ring))
+            )
+        )
+
     def contains(self, p: Float2, tol: float = 1e-9) -> bool:
         """Whether ``p`` lies in the region (boundary included)."""
         return point_in_rings(self.rings, as_vec2(p), tol)
