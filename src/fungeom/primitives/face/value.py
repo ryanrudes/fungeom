@@ -62,8 +62,25 @@ class FaceValue:
         return self.region.contains(self.plane.to_local(as_vec3(p)))
 
     def transformed_by(self, transform: RigidTransform) -> FaceValue:
-        """This patch moved rigidly in 3D — the plane is transported, the (plane-local) region kept."""
-        return FaceValue(plane=self.plane.transformed_by(transform), region=self.region)
+        """This patch moved rigidly in 3D — the plane is transported and the footprint rotates with it.
+
+        The region lives in the plane's *normal-gauge* chart, whose basis is re-derived from the
+        (transported) normal alone. A rotation about the normal leaves the normal — and so the
+        chart — unchanged, so naively *keeping* the region's chart coordinates would drop that
+        in-plane rotation and only move the centroid. We instead rotate the region by the gauge
+        mismatch between the rotated old axes (``R·x``, ``R·y``) and the re-gauged new ones, so the
+        footprint moves rigidly (``R·v + t``). A pure translation leaves the chart unchanged (the
+        remap is the identity). The same fix the ``FaceSignal`` boundary/frame readbacks carry.
+        """
+        moved = self.plane.transformed_by(transform)
+        x, y = self.plane.local_axes()
+        new_x, new_y = moved.local_axes()
+        rotation = transform.rotation
+        rotated_x, rotated_y = rotation @ x, rotation @ y
+        remap = np.array(
+            [[rotated_x @ new_x, rotated_y @ new_x], [rotated_x @ new_y, rotated_y @ new_y]]
+        )  # (u, v) ↦ (u', v'), a planar rotation in SO(2)
+        return FaceValue(plane=moved, region=self.region.linearly_mapped(remap))
 
     def frame(self) -> RigidTransform:
         """The canonical patch frame: origin at the region centroid, +z = normal, +x = the plane's

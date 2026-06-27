@@ -99,8 +99,14 @@ class Face(Resolver[FaceValue]):
         return FaceContains(face=self, point=point)
 
     def transformed_by(self, transform: Transform) -> Face:
-        """This patch moved rigidly in 3D (→ ``Face``; the plane is transported, the region kept)."""
-        return Face.on(self.plane().transformed_by(transform), self.region())
+        """This patch moved rigidly in 3D (→ ``Face``; plane transported, footprint rotated with it).
+
+        A rotation about the normal rotates the footprint (``R·v + t``); it is not merely re-centred
+        — the region's chart coordinates are re-gauged to follow the moved chart.
+        """
+        from fungeom.primitives.face.resolvers.transformed import FaceTransformed
+
+        return FaceTransformed(face=self, transform=transform)
 
     def frame(self) -> Transform:
         """The canonical patch frame (→ ``Transform``): origin at the region centroid, +z = the plane

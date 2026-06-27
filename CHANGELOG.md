@@ -7,6 +7,40 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-27
+
+### Fixed
+
+- **`Face.transformed_by` / `FaceValue.transformed_by` dropped in-plane rotation.** A `Face`'s region
+  lives in the plane's *normal-derived gauge* chart; a rotation **about the normal** leaves that chart
+  unchanged, so the old "transport the plane, keep the region" moved only the centroid and left the
+  footprint un-rotated (`static_v + (R·c − c) + t` instead of `R·static_v + t`). It now rotates the
+  region by the gauge mismatch, matching the `FaceSignal` `boundary()`/`frame()` readbacks fixed in
+  0.2.1. This corrects the per-instant `FaceSignal.at`/`clearance`/`contains` for any pose that spins
+  the patch about its normal — previously they measured against an un-rotated footprint.
+
+### Changed
+
+- **Vectorized `FaceSignal.clearance` and the `PlaneSignal` accessor readbacks.** `clearance(point |
+  cloud)`, `PlaneSignal.signed_distance(point | cloud)` and `plane().normal()`/`origin()` gained a
+  fast `resolve_over` that applies the materialized `(T, 4, 4)` pose stack to the static geometry in
+  one batched numpy op — clearance by inverse-transporting the query into the static patch frame and
+  splitting the bounded distance into its out-of-plane height and in-plane overhang (the latter one
+  batched GEOS call). Exact-matches the per-instant values at the sample instants, like the 0.2.1
+  `boundary()`/`frame()` fix. At T=5000, K=5: `clearance` **2651 → ~30 ms (~88×)**, `signed_distance`
+  142 → ~19 ms, `normal`/`origin` ~at the ~8 ms carrier. New value helper `Region2Value.linearly_mapped`.
+
+## [0.2.1] - 2026-06-26
+
+### Fixed
+
+- **`FaceSignal.boundary()`/`frame()` dropped rotation** and resolved per-instant. They re-embedded
+  the static 2-D region into the *transported* plane's re-gauged chart, so a rotating pose moved only
+  the centroid, not the vertex offsets. Now they transport the static geometry rigidly (`R·v + t` /
+  `pose ∘ static_frame`) and their `resolve_over` applies the `(T, 4, 4)` pose stack in one batched op
+  (497 ms / 751 ms → ~7 / ~9 ms at T=5000). (`clearance` and `plane().signed_distance` were left
+  per-instant — see Unreleased.)
+
 ## [0.2.0] - 2026-06-26
 
 The patch *runtime* — a moving patch retarget can read off as signals, with partiality flowing end

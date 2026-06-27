@@ -91,6 +91,24 @@ def test_transformed_by_transports_the_patch() -> None:
     assert np.allclose(moved.plane().normal().resolve().vector, [0, 0, 1])  # the region is kept (plane-local)
 
 
+def test_transformed_by_rotates_the_footprint_rigidly() -> None:
+    from fungeom import RigidTransform, Transform
+    from scipy.spatial.transform import Rotation
+
+    patch = _patch()  # a 4×2 rectangle — asymmetric, so an in-plane spin genuinely moves the footprint
+    spin = Rotation.from_euler("z", 90, degrees=True)  # a rotation *about the normal*
+    move = Transform.known(RigidTransform.from_rotation(spin, [1.0, 2.0, 0.5]))
+    moved = patch.transformed_by(move)
+    probe = np.array([1.3, 0.4, 2.0])
+    # clearance is rigid-invariant: distance to the moved patch == distance from the inverse-moved
+    # probe to the static patch. Pre-fix, transformed_by dropped the in-plane rotation and this failed.
+    local = spin.inv().as_matrix() @ (probe - [1.0, 2.0, 0.5])
+    assert np.isclose(moved.clearance(Point3.at(*probe)).resolve(), patch.clearance(Point3.at(*local)).resolve())
+    # and the spin is not a no-op: keeping the region (translation only) gives a different clearance
+    translated_only = patch.clearance(Point3.at(*(probe - [1.0, 2.0, 0.5]))).resolve()
+    assert not np.isclose(moved.clearance(Point3.at(*probe)).resolve(), translated_only)
+
+
 def test_frame_is_deterministic_with_normal_as_z() -> None:
     patch = _patch()
     frame = patch.frame().resolve()

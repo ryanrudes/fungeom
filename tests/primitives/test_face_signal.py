@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fungeom import (
     Direction3,
@@ -20,6 +21,7 @@ from fungeom import (
     Sampling,
     TransformSignal,
     Unresolvable,
+    UnresolvableError,
 )
 
 
@@ -130,3 +132,72 @@ def test_boundary_and_frame_transport_rotation_in_both_paths() -> None:
     assert np.allclose(frame[:3, :3], rot @ static_frame.rotation)
     assert np.allclose(frame[:3, 3], rot @ static_frame.translation + trans)
     assert np.allclose(fs.frame().at(0.0).resolve().matrix, frame)  # _decide path matches
+
+
+def test_clearance_and_plane_readbacks_match_per_instant_under_rotation() -> None:
+    # the vectorized resolve_over of clearance / signed_distance / normal / origin must agree with
+    # the per-instant .at() path at the sample instants — including a rotation about the normal,
+    # which the footprint must follow (the transformed_by fix; resolve_over inverse-transports it).
+    from scipy.spatial.transform import Rotation
+
+    pts = Point3Bundle.from_map(
+        {k: Point3.at(*v) for k, v in {"a": (-1, -1, 0), "b": (1, -1, 0), "c": (1, 1, 0), "d": (-1, 1, 0)}.items()}
+    )
+    face = Face.on(pts.fit_plane().facing(Point3.at(0, 0, 1.0)), Region2.hull(pts.in_frame(pts.fit_plane())))
+    m0, m1 = np.eye(4), np.eye(4)
+    m1[:3, :3] = Rotation.from_euler("z", 90, degrees=True).as_matrix()  # a 90° spin about the normal
+    m1[0, 3] = 1.5  # plus a translation, between the two samples
+    fs = FaceSignal.of(face, TransformSignal.from_matrices(np.array([0.0, 1.0]), np.array([m0, m1])))
+    grid = Sampling.at_times([0.0, 1.0])
+    cloud = Point3BundleSignal.from_frames([0.0, 1.0], [[[1.3, 0.0, 0.4], [0.0, 0.0, 0.2]]] * 2, keys=["edge", "mid"])
+    point = Point3Signal.from_samples([0.0, 1.0], [[1.3, 0.0, 0.4]] * 2)
+
+    clear_cloud, mask = fs.clearance(cloud).resolve_over(grid)
+    clear_point = fs.clearance(point).resolve_over(grid)
+    sd_cloud, _ = fs.plane().signed_distance(cloud).resolve_over(grid)
+    sd_point = fs.plane().signed_distance(point).resolve_over(grid)
+    normals = fs.plane().normal().resolve_over(grid)
+    origins = fs.plane().origin().resolve_over(grid)
+    assert mask.all()
+
+    for i, t in enumerate([0.0, 1.0]):
+        bundle = fs.clearance(cloud).at(t).resolve()
+        assert np.allclose([bundle.members[k] for k in bundle.roster], clear_cloud[i])
+        assert np.isclose(fs.clearance(point).at(t).resolve(), clear_point[i])
+        sd = fs.plane().signed_distance(cloud).at(t).resolve()
+        assert np.allclose([sd.members[k] for k in sd.roster], sd_cloud[i])
+        assert np.isclose(fs.plane().signed_distance(point).at(t).resolve(), sd_point[i])
+        assert np.allclose(fs.plane().normal().at(t).resolve().vector, normals[i])
+        assert np.allclose(fs.plane().origin().at(t).resolve().coord, origins[i])
+
+    # the spin genuinely moved the footprint: the 'edge' marker reads a different bounded clearance
+    # at the rotated instant than at the identity one (resolve_over isn't dropping the rotation).
+    assert not np.isclose(clear_cloud[0, 0], clear_cloud[1, 0])
+
+
+def test_clearance_resolve_over_masks_occluded_cloud_members() -> None:
+    patch = _rising_patch()  # pose rises z: 0 → 2 over [0, 2]
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 2.0],
+        [[[0, 0, 5], [0.5, 0, 5]], [[0, 0, 5], [0.5, 0, 5]]],
+        keys=["a", "b"],
+        present=[[True, True], [True, False]],  # 'b' occluded at t = 2
+    )
+    values, mask = patch.clearance(cloud).resolve_over(Sampling.at_times([0.0, 2.0]))
+    assert mask.tolist() == [[True, True], [True, False]]
+    assert np.isnan(values[1, 1])  # the occluded cell is nan with a False mask, like resolved_grid
+    assert np.allclose([values[0, 0], values[0, 1], values[1, 0]], [5, 5, 3])  # present cells resolve
+
+
+def test_clearance_resolve_over_on_an_empty_face_raises() -> None:
+    empty = FaceSignal.of(
+        Face.on(Plane.through(Point3.at(0, 0, 0), Direction3.of(0, 0, 1)), Region2.empty),
+        TransformSignal.from_samples([0.0, 2.0], [RigidTransform.identity(), RigidTransform.identity()]),
+    )
+    grid = Sampling.at_times([0.0, 2.0])
+    foot = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 5], [0, 0, 5]])
+    cloud = Point3BundleSignal.from_frames([0.0, 2.0], [[[0, 0, 5]], [[0, 0, 5]]], keys=["m"])
+    with pytest.raises(UnresolvableError):  # an empty patch has no surface to measure to
+        empty.clearance(foot).resolve_over(grid)
+    with pytest.raises(UnresolvableError):
+        empty.clearance(cloud).resolve_over(grid)
