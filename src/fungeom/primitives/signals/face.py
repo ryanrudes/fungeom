@@ -20,8 +20,9 @@ from dataclasses import dataclass
 from typing import overload
 
 import numpy as np
+import shapely
 
-from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
+from fungeom.core.resolvability import Resolvability, Resolvable, UnresolvableError, Unresolvable
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.face.decidability import FaceDecision
 from fungeom.primitives.face.resolvers.base import Face
@@ -31,6 +32,8 @@ from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.region2.resolvers.base import Region2
+from fungeom.primitives.region2.shapely_bridge import to_shapely
+from fungeom.primitives.region2.value import Region2Value
 from fungeom.primitives.sampling.resolvers.base import Sampling
 from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.transform.value import RigidTransform
@@ -177,6 +180,14 @@ class _FaceSignalPlane(PlaneSignal):
     def _decide(self) -> Resolvability[SampledSeries[PlaneValue]]:
         return decide_signal_map(self.source, lambda face: face.plane, PLANE_BLEND)
 
+    def _sampled_planes(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        static = self.source.face.plane().resolve()  # PlaneValue; raises if the plane is ungrounded
+        poses = self.source.pose.resolve_over(onto)  # (T, 4, 4) — one batched read; raises off-support
+        rotation, translation = poses[:, :3, :3], poses[:, :3, 3]
+        points = np.einsum("tij,j->ti", rotation, static.point) + translation  # R·p₀ + t
+        normals = np.einsum("tij,j->ti", rotation, static.normal)  # R·n (rigid: stays unit)
+        return points, normals
+
 
 def _transport_cloud(cloud: BundleValue[Point3Value], transform: RigidTransform) -> BundleValue[Point3Value]:
     """Move every member of a point cloud rigidly by ``transform`` (world-anchored)."""
@@ -235,6 +246,42 @@ class _FaceSignalBoundary(Point3BundleSignal):
         return values, mask
 
 
+def _region_lateral_distance(region: Region2Value, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """The in-plane overhang: each chart point ``(u, v)``'s distance to ``region`` — ``0`` inside the
+    footprint, the distance to its boundary outside — over the whole stack in one batched GEOS call.
+
+    The vectorized sibling of ``FaceValue.closest_point``'s region clamp (``shapely.distance`` is
+    ``0`` for a contained point, exactly the clamp's zero in-plane displacement). Occluded cloud
+    members arrive as ``nan``; they are zeroed for GEOS (kept finite) and re-masked by the caller.
+    """
+    geom = to_shapely(region)
+    finite = np.isfinite(u) & np.isfinite(v)
+    coords = np.stack([np.where(finite, u, 0.0).ravel(), np.where(finite, v, 0.0).ravel()], axis=-1)
+    return np.asarray(shapely.distance(geom, shapely.points(coords)), dtype=float).reshape(u.shape)
+
+
+def _transported_clearance(face: FaceValue, poses: np.ndarray, query: np.ndarray) -> np.ndarray:
+    """Bounded clearance from world ``query`` points to the static ``face`` carried by ``poses``, batched.
+
+    Clearance is rigid-invariant, so rather than transport the patch and clamp per instant we
+    inverse-transport each query into the *static* patch's frame (``Rᵀ(q − t)``) and split the
+    distance into the out-of-plane height ``h`` and the in-plane overhang ``lateral`` (orthogonal,
+    so ``√(h² + lateral²)``) against the one fixed footprint. ``query`` is ``(T, M, 3)`` aligned with
+    the ``(T, 4, 4)`` pose stack; returns clearance ``(T, M)``. Matches the per-instant readback at
+    the sample instants (between samples it interpolates the pose, like ``boundary()`` / ``frame()``).
+    """
+    plane = face.plane
+    origin, normal = np.asarray(plane.point), np.asarray(plane.normal)
+    axis_x, axis_y = (np.asarray(axis) for axis in plane.local_axes())
+    rotation, translation = poses[:, :3, :3], poses[:, :3, 3]  # (T, 3, 3), (T, 3)
+    local = np.einsum("tji,tmj->tmi", rotation, query - translation[:, None, :])  # Rᵀ(q − t); (T, M, 3)
+    offset = local - origin
+    height = offset @ normal  # (T, M) — out-of-plane signed height
+    lateral = _region_lateral_distance(face.region, offset @ axis_x, offset @ axis_y)  # (T, M)
+    clearance: np.ndarray = np.sqrt(height * height + lateral * lateral)
+    return clearance
+
+
 @dataclass(frozen=True, eq=False)
 class _FaceClearanceSignal(ScalarSignal):
     """Per-instant clearance from one point trajectory to the moving patch."""
@@ -246,6 +293,20 @@ class _FaceClearanceSignal(ScalarSignal):
         return decide_lifted(
             self.face_signal, self.point, lambda t: self.face_signal.at(t).clearance(self.point.at(t)), SCALAR_BLEND
         )
+
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        """Resample onto ``onto`` and resolve to a raw ``(T,)`` clearance array — the vectorized readback.
+
+        Inverse-transports the point trajectory into the static patch's frame and decomposes the
+        bounded distance in one batched op. Resolves eagerly (raises off-support, or if the patch is
+        empty — no surface to measure to).
+        """
+        face = self.face_signal.face.resolve()  # FaceValue; raises if the face is ungrounded
+        if face.region.is_empty:
+            raise UnresolvableError("the clearance to an empty face is undefined")
+        poses = self.face_signal.pose.resolve_over(onto)  # (T, 4, 4)
+        query = self.point.resolve_over(onto)  # (T, 3)
+        return _transported_clearance(face, poses, query[:, None, :])[:, 0]
 
 
 @dataclass(frozen=True, eq=False)
@@ -262,6 +323,22 @@ class _FaceClearanceBundleSignal(ScalarBundleSignal):
             lambda t: self.face_signal.at(t).clearance(self.cloud.at(t)),
             SCALAR_BUNDLE_BLEND,
         )
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N)`` clearance array + present mask.
+
+        The contact-clearance field, vectorized: the whole moving cloud is inverse-transported into
+        the static patch's frame and its bounded clearance decomposed in one batched op (occluded
+        members stay ``nan`` with a ``False`` mask). Resolves eagerly (raises off-support, or if the
+        patch is empty).
+        """
+        face = self.face_signal.face.resolve()
+        if face.region.is_empty:
+            raise UnresolvableError("the clearance to an empty face is undefined")
+        poses = self.face_signal.pose.resolve_over(onto)  # (T, 4, 4)
+        cloud, mask = self.cloud.resolve_over(onto)  # (T, N, 3), (T, N)
+        clearance = _transported_clearance(face, poses, cloud)  # (T, N)
+        return np.where(mask, clearance, np.nan), mask
 
 
 @dataclass(frozen=True, eq=False)

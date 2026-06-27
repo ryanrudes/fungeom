@@ -144,6 +144,19 @@ class PlaneSignal(Signal[PlaneValue]):
             return _PlaneClearanceBundleSignal(plane=self, cloud=point)
         return _PlaneSignedDistanceSignal(plane=self, point=point)
 
+    def _sampled_planes(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """This plane's ``(points (T, 3), normals (T, 3))`` over ``onto`` — the vectorized readback hook.
+
+        The base resolves per-instant (resample then stack); ``_FaceSignalPlane`` overrides it to
+        transport the static plane by the materialized ``(T, 4, 4)`` pose stack in one batched op,
+        so the moving-patch ``normal()`` / ``origin()`` / ``signed_distance`` readbacks that read
+        through here all inherit the fast path. Resolves eagerly (raises off the support).
+        """
+        series = self.resample(onto).resolve()
+        points = np.array([value.point for value in series.values], dtype=float).reshape(-1, 3)
+        normals = np.array([value.normal for value in series.values], dtype=float).reshape(-1, 3)
+        return points, normals
+
     def resample(self, onto: Sampling) -> PlaneSignal:
         """This signal reconstructed onto a new time base (Unresolvable if a target is undefined)."""
         return _ResampledPlaneSignal(source=self, onto=onto)
@@ -223,6 +236,9 @@ class _PlaneNormalSignal(Direction3Signal):
     def _decide(self) -> Resolvability[SampledSeries[Direction3Value]]:
         return decide_signal_map(self.source, lambda p: Direction3Value(vector=p.normal), DIRECTION3_BLEND)
 
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        return self.source._sampled_planes(onto)[1]  # the (T, 3) normal stack
+
 
 @dataclass(frozen=True, eq=False)
 class _PlaneOriginSignal(Point3Signal):
@@ -230,6 +246,9 @@ class _PlaneOriginSignal(Point3Signal):
 
     def _decide(self) -> Resolvability[SampledSeries[Point3Value]]:
         return decide_signal_map(self.source, lambda p: Point3Value(coord=p.point, frame=WORLD_FRAME), POINT3_BLEND)
+
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        return self.source._sampled_planes(onto)[0]  # the (T, 3) representative-point stack
 
 
 @dataclass(frozen=True, eq=False)
@@ -241,3 +260,9 @@ class _PlaneSignedDistanceSignal(ScalarSignal):
         return decide_lifted(
             self.plane, self.point, lambda t: self.plane.at(t).signed_distance(self.point.at(t)), SCALAR_BLEND
         )
+
+    def resolve_over(self, onto: Sampling) -> np.ndarray:
+        points, normals = self.plane._sampled_planes(onto)  # (T, 3), (T, 3)
+        query = self.point.resolve_over(onto)  # (T, 3)
+        signed: np.ndarray = np.einsum("tc,tc->t", query - points, normals)  # n · (q − p₀), per instant
+        return signed

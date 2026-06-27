@@ -976,3 +976,15 @@ class _PlaneClearanceBundleSignal(ScalarBundleSignal):
         return decide_lifted(
             self.plane, self.cloud, lambda t: self.plane.at(t).signed_distance(self.cloud.at(t)), SCALAR_BUNDLE_BLEND
         )
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N)`` signed-distance array + present mask.
+
+        The vectorized form of the per-instant lift: the moving plane's ``(points, normals)`` stacks
+        dotted against the moving cloud in one batched op (occluded cells stay ``nan`` with a
+        ``False`` mask). Resolves eagerly (raises if a target is off either support).
+        """
+        points, normals = self.plane._sampled_planes(onto)  # (T, 3), (T, 3)
+        cloud, mask = self.cloud.resolve_over(onto)  # (T, N, 3), (T, N)
+        values = np.einsum("tnc,tc->tn", cloud - points[:, None, :], normals)  # n · (qₖ − p₀)
+        return np.where(mask, values, np.nan), mask

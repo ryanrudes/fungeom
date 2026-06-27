@@ -200,6 +200,17 @@ class Region2Value:
         vertices = np.vstack(self.rings)
         return as_vec2(vertices.min(axis=0)), as_vec2(vertices.max(axis=0))
 
+    def linearly_mapped(self, matrix: np.ndarray) -> Region2Value:
+        """Every ring vertex sent through the 2×2 linear map ``matrix`` (``v ↦ matrix · v``).
+
+        The in-chart half of a rigid 3-D transport of a ``Face`` (where ``matrix`` is the planar
+        rotation relating the old and re-gauged charts). An orientation-preserving map keeps the
+        rings simple and their winding, so the result is a valid region; the empty region maps to
+        itself.
+        """
+        m = np.asarray(matrix, dtype=float)
+        return Region2Value(rings=tuple(ring @ m.T for ring in self.rings))
+
     def approx_equal(self, other: Region2Value, atol: float = 1e-9) -> bool:
         """True if both regions have the same rings up to vertex order/rotation within ``atol``."""
         if len(self.rings) != len(other.rings):

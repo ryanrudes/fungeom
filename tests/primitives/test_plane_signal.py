@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from fungeom import PlaneSignal, Point3BundleSignal, Point3Signal, Unresolvable
+from fungeom import PlaneSignal, Point3BundleSignal, Point3Signal, Sampling, Unresolvable
 from fungeom.values import IntervalValue, PlaneValue, SampledSeries
 
 
@@ -43,6 +43,29 @@ def test_normal_origin_and_signed_distance_readback() -> None:
     sd = plane.signed_distance(point)
     assert np.isclose(abs(sd.at(0.0).resolve()), 5.0)
     assert np.isclose(abs(sd.at(2.0).resolve()), 4.0)
+
+
+def test_vectorized_readback_matches_per_instant_on_a_sampled_plane() -> None:
+    # the base _sampled_planes hook: a fitted (non-face) plane's normal/origin/signed_distance
+    # resolve_over must equal the per-instant .at() readback at the sample instants.
+    flat0 = [[0, 0, 0], [2, 0, 0], [0, 2, 0]]
+    flat1 = [[0, 0, 1], [2, 0, 1], [0, 2, 1]]
+    plane = Point3BundleSignal.from_frames([0.0, 2.0], [flat0, flat1]).fit_plane()
+    grid = Sampling.at_times([0.0, 2.0])
+    point = Point3Signal.from_samples([0.0, 2.0], [[0, 0, 5], [0, 0, 5]])
+    cloud = Point3BundleSignal.from_frames([0.0, 2.0], [[[0, 0, 5], [1, 1, 5]]] * 2, keys=["x", "y"])
+
+    normals = plane.normal().resolve_over(grid)
+    origins = plane.origin().resolve_over(grid)
+    sd_point = plane.signed_distance(point).resolve_over(grid)
+    sd_cloud, mask = plane.signed_distance(cloud).resolve_over(grid)
+    assert mask.all()
+    for i, t in enumerate([0.0, 2.0]):
+        assert np.allclose(plane.normal().at(t).resolve().vector, normals[i])
+        assert np.allclose(plane.origin().at(t).resolve().coord, origins[i])
+        assert np.isclose(plane.signed_distance(point).at(t).resolve(), sd_point[i])
+        sd = plane.signed_distance(cloud).at(t).resolve()
+        assert np.allclose([sd.members[k] for k in sd.roster], sd_cloud[i])
 
 
 def test_fit_plane_orients_normals_consistently() -> None:

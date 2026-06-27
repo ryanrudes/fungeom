@@ -323,3 +323,13 @@ def test_closest_point_clamps_into_the_region() -> None:
     assert a.closest_point(Point2.at(5, 0)).resolve().approx_equal(Point2.at(2, 0).resolve())  # outside → clamped
     # an empty region has no closest point
     assert isinstance(Region2.empty.closest_point(Point2.at(0, 0)).decide(), Unresolvable)
+
+
+def test_linearly_mapped_sends_each_vertex_through_the_matrix() -> None:
+    square = Region2.rectangle(2, 2).resolve()  # [-1, 1]²
+    quarter = np.array([[0.0, -1.0], [1.0, 0.0]])  # a +90° rotation in the chart
+    turned = square.linearly_mapped(quarter)
+    assert np.isclose(turned.area(), 4.0)  # an SO(2) map preserves area
+    assert turned.approx_equal(square)  # the square is invariant under a quarter turn
+    assert any(np.allclose(vertex, [-1.0, 1.0]) for vertex in turned.rings[0])  # corner (1, 1) → (-1, 1)
+    assert Region2Value(rings=()).linearly_mapped(quarter).is_empty  # empty maps to itself
