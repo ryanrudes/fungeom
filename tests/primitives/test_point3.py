@@ -156,6 +156,29 @@ def test_free_identity_is_object_identity() -> None:
     assert same.resolve_in({a: Point3.at(5, 0, 0)}) == 0.0  # a point's distance to itself
 
 
+# --- frame coordinates (coordinates_in — the read-side inverse of in_frame) -
+
+
+def test_coordinates_in_reads_a_world_point_in_another_frame() -> None:
+    table = Frame.world.attach("table", Transform.translation([10, 0, 0]))
+    assert np.allclose(Point3.at(11, 2, 3).coordinates_in(table).resolve(), [1, 2, 3])
+
+
+def test_coordinates_in_world_frame_is_identity() -> None:
+    assert np.allclose(Point3.at(5, 6, 7).coordinates_in(WORLD_FRAME).resolve(), [5, 6, 7])
+
+
+def test_coordinates_in_round_trips_in_frame_under_rotation() -> None:
+    # The exact inverse of in_frame, even when the frame is rotated (a transpose/sign slip would fail).
+    spun = Frame.world.attach("f", Transform.rotation(Vec3.of(0, 0, 1), Scalar.of(1.2)))
+    v = Vec3.of(0.5, -2.0, 4.0)
+    assert np.allclose(Point3.in_frame(v, spun).coordinates_in(spun).resolve(), [0.5, -2.0, 4.0])
+
+
+def test_coordinates_in_ungrounded_frame_is_unresolvable() -> None:
+    assert isinstance(Point3.at(1, 2, 3).coordinates_in(Frame.detached("loose")).decide(), Unresolvable)
+
+
 # --- value type behavior ---------------------------------------------------
 
 

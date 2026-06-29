@@ -151,3 +151,16 @@ class Point3(Resolver[Point3Value]):
         from fungeom.primitives.point3.resolvers.reflected import ReflectedPoint3
 
         return ReflectedPoint3(point=self, center=center)
+
+    def coordinates_in(self, frame: CoordinateFrame | Frame) -> Vec3:
+        """This point's coordinates expressed in ``frame`` (→ ``Vec3``) — the inverse of :meth:`in_frame`.
+
+        Where :meth:`in_frame` *builds* a point from a local coordinate vector in a frame, this
+        *reads* that vector back: the ``(x, y, z)`` of this (world-anchored) point measured in
+        ``frame``. ``Unresolvable`` if ``frame`` is ungrounded — a detached frame has no
+        world-relative coordinates.
+        """
+        from fungeom.primitives.frame.resolvers.known import as_frame
+        from fungeom.primitives.point3.resolvers.local_coordinates import LocalCoordinates3
+
+        return LocalCoordinates3(point=self, frame=as_frame(frame))
