@@ -257,7 +257,7 @@ by the test suite, so they stay current):
 | Script | Shows |
 | --- | --- |
 | [`01_quickstart.py`](examples/01_quickstart.py) | construct → compose → resolve; scalars flowing across types |
-| [`02_coordinate_frames.py`](examples/02_coordinate_frames.py) | a kinematic chain; grounding, and why an unplaced frame is `Unresolvable` |
+| [`02_coordinate_frames.py`](examples/02_coordinate_frames.py) | a kinematic chain; grounding, why an unplaced frame is `Unresolvable`, and `coordinates_in` (reading a point's coordinates back in a frame) |
 | [`03_decidability_and_partiality.py`](examples/03_decidability_and_partiality.py) | value-dependent partialities, reasons, propagation; predicates as decidable `Bool`s |
 | [`04_visualizing_resolvers.py`](examples/04_visualizing_resolvers.py) | rendering the lazy graph to *see* where an unresolvability lives |
 | [`05_time_and_clocks.py`](examples/05_time_and_clocks.py) | the temporal layer: durations/instants, intervals & coverage with gaps, clock grounding |
@@ -266,6 +266,7 @@ by the test suite, so they stay current):
 | [`08_point_clouds_over_time.py`](examples/08_point_clouds_over_time.py) | collections: a `Point3Bundle` (mask/fold/broadcast) and a `Point3BundleSignal` (a point cloud over time) — an occluded marker is honestly *Unresolvable*, not invented; `key(k)` is one marker's gappy trajectory |
 | [`09_regions_and_patches.py`](examples/09_regions_and_patches.py) | the 2D region algebra — `hull`/`offset`/`difference`, the **positive-inside** stability margin, region predicates — and a `Face`: the *bounded* patch whose clearance clamps a point *into* its footprint |
 | [`10_contact_over_time.py`](examples/10_contact_over_time.py) | the **contact spine** end-to-end — `fit_plane` → per-marker clearance → `min` → `le(0)` → a three-valued `BoolSignal`; `when_true`/`first_true`/`last_true` give the contact interval, touchdown & release; undefined ≠ False |
+| [`11_free_variables.py`](examples/11_free_variables.py) | **free variables** — the unknown as a first-class leaf: author a contact patch as data over `Point3.free` markers, then `bind`/`resolve_in`/`decide_in` their positions; `free_variables` and a missing-marker `Unresolvable` |
 
 ```bash
 python examples/02_coordinate_frames.py
