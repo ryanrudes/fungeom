@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from fungeom import (
+    Interpolation,
     Interval,
     Instant,
     Point3BundleSignal,
@@ -29,6 +30,30 @@ def test_construction_and_at() -> None:
     assert isinstance(clear.at(0.0), ScalarBundle)
     assert clear.at(0.0).at("b").resolve() == 1.0
     assert clear.at(1.0).at("b").resolve() == 0.0  # the key-by-key lerp
+
+
+def test_resolve_over_vectorized_matches_per_instant_and_falls_back() -> None:
+    # the dense (T, N) contact-field carrier's vectorized resolve_over equals the per-instant at(t)
+    # readback (incl. occlusion + between-sample interp); a non-default kernel defers to the generic path.
+    times = np.arange(5) * 0.5
+    data = np.random.default_rng(2).standard_normal((5, 3))
+    present = np.ones((5, 3), dtype=bool)
+    present[2, 0] = False  # occlude marker 0 at t = 1.0
+    cloud = ScalarBundleSignal.from_frames(times, data, keys=["a", "b", "c"], present=present)
+
+    for onto_times in (times, times[:-1] + 0.25):  # exact knots + between-sample
+        values, mask = cloud.resolve_over(Sampling.at_times(onto_times))
+        for i, t in enumerate(onto_times):
+            bundle = cloud.at(float(t)).resolve()
+            assert np.array_equal(mask[i], [bundle.present(k) for k in bundle.roster])
+            for j, key in enumerate(bundle.roster):
+                if bundle.present(key):
+                    assert np.isclose(values[i, j], bundle.members[key])
+                else:
+                    assert np.isnan(values[i, j])
+
+    held = ScalarBundleSignal.from_frames(times, data, via=Interpolation.hold)  # fallback → generic
+    assert held.resolve_over(Sampling.at_times(times[:-1] + 0.25))[0].shape == (4, 3)
 
 
 def test_folds_reduce_per_instant() -> None:

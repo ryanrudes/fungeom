@@ -513,6 +513,51 @@ def resolved_grid(resampled: Signal[Any], to_row: Callable[[Any], Any], fill: An
     return np.array(rows), np.array(masks, dtype=bool)
 
 
+def dense_grid_readback(
+    sampling: Sampling,
+    frames: np.ndarray,
+    present: np.ndarray | None,
+    interpolation: Interpolation,
+    boundary: Boundary,
+    max_gap: float | None,
+    onto: Sampling,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """The vectorized dense readback for a sampled bundle signal — or ``None`` to defer to the generic path.
+
+    The bundle analog of ``_MatrixTransformSignal``'s fast ``resolve_over``: a ``from_frames`` cloud
+    already stores its samples as one dense ``(T, N[, C])`` array, so when reconstruction is the
+    default ``linear`` kernel with the ``undefined`` boundary over a gapless (no ``max_gap``), strictly
+    increasing time base and every ``onto`` target lands in-domain, it can be reconstructed in one
+    batched numpy op instead of materializing ``T·N`` per-frame value objects. Exact knots
+    short-circuit (the reconstruction contract); an interior target is the **key-intersection** lerp of
+    its two bracketing frames, so the present mask is ``present[lo] & present[hi]`` (the entity half of
+    the occlusion mask) and an occluded cell is ``nan`` — bit-for-bit the generic
+    :func:`resolved_grid` result. Returns ``None`` (defer to the per-instant path) for anything the
+    shortcut does not model: a non-default kernel/boundary, a ``max_gap`` (interior gaps), an
+    Unresolvable or count-mismatched time base, or an off-domain target.
+    """
+    if interpolation is not Interpolation.linear or boundary is not Boundary.undefined or max_gap is not None:
+        return None
+    decided_onto, decided_self = onto.decide(), sampling.decide()
+    if not (isinstance(decided_onto, Resolvable) and isinstance(decided_self, Resolvable)):
+        return None
+    times = np.asarray(decided_self.value.times, dtype=float)
+    target = np.asarray(decided_onto.value.times, dtype=float)
+    if times.shape[0] < 2 or times.shape[0] != frames.shape[0] or not bool(np.all(np.diff(times) > 0.0)):
+        return None
+    if target.size == 0 or float(target.min()) < float(times[0]) or float(target.max()) > float(times[-1]):
+        return None
+    hi = np.searchsorted(times, target, side="left")  # times[hi] >= target; in [0, T-1] for in-domain targets
+    exact = times[hi] == target  # an exact knot short-circuits, exactly as Interpolation.linear does
+    lo = np.where(exact, hi, hi - 1)
+    segment = np.where(exact, 1.0, times[hi] - times[lo])  # avoid 0/0 at a knot (lo == hi there)
+    frac = ((target - times[lo]) / segment).reshape((target.shape[0],) + (1,) * (frames.ndim - 1))
+    values = (1.0 - frac) * frames[lo] + frac * frames[hi]
+    mask = np.ones((target.shape[0], frames.shape[1]), dtype=bool) if present is None else (present[lo] & present[hi])
+    values = np.where(mask.reshape(mask.shape + (1,) * (frames.ndim - 2)), values, np.nan)
+    return values, mask
+
+
 def decide_lifted_n[U](
     sources: tuple[Signal[Any], ...],
     at_combined: Callable[[float], Resolver[U]],

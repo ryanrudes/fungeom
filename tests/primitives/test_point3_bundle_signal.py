@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fungeom import (
     Boundary,
@@ -16,6 +17,7 @@ from fungeom import (
     Sampling,
     ScalarSignal,
     Unresolvable,
+    UnresolvableError,
 )
 from fungeom.values import CoverageValue, IntervalValue, SampledSeries
 
@@ -27,6 +29,46 @@ def _clip() -> Point3BundleSignal:
         [[[0, 0, 0], [5, 0, 0]], [[10, 0, 0], [5, 0, 0]]],
         keys=["HEAD", "LWRIST"],
     )
+
+
+def _per_instant(cloud: Point3BundleSignal, onto_times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Ground truth: the per-instant ``at(t)`` readback (dense ``(T, N, 3)`` + present mask)."""
+    rows, masks = [], []
+    for t in onto_times:
+        bundle = cloud.at(float(t)).resolve()
+        rows.append([bundle.members[k].coord if bundle.present(k) else [np.nan] * 3 for k in bundle.roster])
+        masks.append([bundle.present(k) for k in bundle.roster])
+    return np.array(rows, dtype=float), np.array(masks, dtype=bool)
+
+
+def test_resolve_over_vectorized_matches_per_instant_and_falls_back() -> None:
+    # the dense (T, N, 3) carrier's vectorized resolve_over must equal the per-instant at(t) readback
+    # bit-for-bit — including occlusion (key-intersection mask) and between-sample interpolation — and
+    # defer to the generic path for any reconstruction the shortcut does not model.
+    times = np.arange(6) * 0.5  # 0, .5, 1, 1.5, 2, 2.5
+    data = np.random.default_rng(0).standard_normal((6, 4, 3))
+    present = np.ones((6, 4), dtype=bool)
+    present[3, 1] = False  # occlude marker 1 at t = 1.5
+    cloud = Point3BundleSignal.from_frames(times, data, present=present)
+
+    for onto_times in (times, times[:-1] + 0.25, times[::2]):  # exact knots, between-sample, knot subset
+        values, mask = cloud.resolve_over(Sampling.at_times(onto_times))
+        ref_values, ref_mask = _per_instant(cloud, onto_times)
+        assert np.array_equal(mask, ref_mask)
+        assert np.array_equal(np.isnan(values), np.isnan(ref_values))  # occluded cells are nan on both
+        assert np.allclose(values[mask], ref_values[ref_mask])
+
+    # fallbacks (dense_grid_readback → None → generic per-instant path):
+    held = Point3BundleSignal.from_frames(times, data, via=Interpolation.hold)  # non-default kernel
+    assert held.resolve_over(Sampling.at_times(times[:-1] + 0.25))[0].shape == (5, 4, 3)
+    gapped = Point3BundleSignal.from_frames(times, data, max_gap=0.4)  # 0.5 spacing > 0.4 → interior gaps
+    assert gapped.resolve_over(Sampling.at_times(times))[1].all()  # exact knots still resolve, all present
+    single = Point3BundleSignal.from_frames([1.0], data[:1])  # T = 1, no interval to interpolate
+    assert single.resolve_over(Sampling.at_times([1.0]))[0].shape == (1, 4, 3)
+    with pytest.raises(UnresolvableError):
+        cloud.resolve_over(Sampling.at_times([times[-1] + 1.0]))  # off-domain target → generic raises
+    with pytest.raises(UnresolvableError):
+        cloud.resolve_over(Sampling.at_times([1.0, 0.0]))  # an Unresolvable (non-monotonic) onto
 
 
 def _occluded_clip() -> Point3BundleSignal:
