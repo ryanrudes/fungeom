@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import overload
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
@@ -59,6 +60,7 @@ from fungeom.primitives.signals.series import (
     decide_restricted,
     decide_sample,
     decide_warped,
+    dense_grid_brackets,
     dense_grid_readback,
     resolved_grid,
     support_from_times,
@@ -590,6 +592,48 @@ class TransformBundleSignal(Signal[BundleValue[RigidTransform]]):
             max_gap=max_gap,
         )
 
+    @classmethod
+    def from_matrices(
+        cls,
+        times: ArrayLike,
+        matrices: ArrayLike,
+        keys: Sequence[Hashable] | None = None,
+        via: Interpolation = Interpolation.linear,
+        outside: Boundary = Boundary.undefined,
+        max_gap: float | None = None,
+        present: ArrayLike | None = None,
+    ) -> TransformBundleSignal:
+        """A pose-set signal from a dense ``(T, N, 4, 4)`` matrix stack — the vectorized batch carrier.
+
+        The pose-set analog of :meth:`TransformSignal.from_matrices`: it stores the raw ``(T, N, 4, 4)``
+        array directly, so there are no ``T·N`` per-frame ``Transform`` wrappers to build and
+        :meth:`resolve_over` reads back with one batched per-joint slerp + a numpy translation lerp
+        (bypassing the per-object path). ``at`` / ``key`` / lifts still materialize lazily. A ``(T, N)``
+        boolean ``present`` mask marks per-frame occlusion exactly as :meth:`from_frames` does.
+        """
+        data = np.array(matrices, dtype=float)  # copy; expected shape (T, N, 4, 4)
+        member_keys = tuple(keys) if keys is not None else tuple(range(data.shape[1]))
+        mask = None if present is None else np.array(present, dtype=bool)  # copy
+        return _MatrixTransformBundleSignal(
+            sampling=Sampling.at_times(times),
+            matrices=data,
+            member_keys=member_keys,
+            present=mask,
+            interpolation=via,
+            boundary=outside,
+            max_gap=max_gap,
+        )
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N, 4, 4)`` array + ``(T, N)`` present mask.
+
+        The pose-set readback: columns follow the roster, an occluded (or off-support-between-brackets)
+        joint is ``nan`` with a ``False`` mask. Resolves eagerly (raises if a target is off the support
+        or crosses opposed orientations). The :meth:`from_matrices` carrier overrides this with a
+        batched fast path; here it is the generic per-instant form.
+        """
+        return resolved_grid(self.resample(onto), lambda value: value.matrix, np.full((4, 4), np.nan))
+
     def at(self, instant: Instant | float) -> TransformBundle:
         """The pose-set at ``instant`` (→ ``TransformBundle``); off-domain / in a gap / across opposed orientations is Unresolvable."""
         from fungeom.primitives.instant.resolvers.literal import as_instant_resolver
@@ -684,6 +728,104 @@ class _SampledTransformBundleSignal(TransformBundleSignal):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _batch_quaternion_slerp(q_lo: np.ndarray, q_hi: np.ndarray, frac: np.ndarray) -> np.ndarray:
+    """Vectorized shortest-path quaternion slerp — ``(M, N, 4) × (M, N, 4) × (M,) → (M, N, 4)``.
+
+    The batched form of the rotation half of ``TRANSFORM_BLEND`` (the SE(3) geodesic): each joint's
+    bracketing quaternions are slerped along the **shorter arc** (the far quaternion is negated when
+    their dot is negative), with a plain normalized lerp where the two are near-parallel (avoiding the
+    ``sin θ → 0`` singularity). At an exact knot (``frac == 0``, ``q_lo == q_hi``) it returns ``q_lo``.
+    Like ``TransformSignal.from_matrices``' fast path, this always takes the short arc rather than
+    declining an exactly-antipodal pair, so it agrees with the per-instant blend at every sample
+    instant (and between, away from the measure-zero opposed-orientation case).
+    """
+    dot = np.sum(q_lo * q_hi, axis=-1)  # (M, N)
+    q_hi = np.where(dot[..., None] < 0.0, -q_hi, q_hi)
+    weight = frac.reshape(-1, 1)  # (M, 1), broadcasts over the joints
+    theta = np.arccos(np.clip(np.abs(dot), 0.0, 1.0))  # (M, N) in [0, π/2]
+    sin_theta = np.sin(theta)
+    near = sin_theta < 1e-9  # near-parallel → plain lerp (the slerp weights are 0/0 there)
+    safe = np.where(near, 1.0, sin_theta)
+    wa = np.where(near, 1.0 - weight, np.sin((1.0 - weight) * theta) / safe)
+    wb = np.where(near, weight, np.sin(weight * theta) / safe)
+    blended = wa[..., None] * q_lo + wb[..., None] * q_hi
+    unit: np.ndarray = blended / np.linalg.norm(blended, axis=-1, keepdims=True)
+    return unit
+
+
+@dataclass(frozen=True, eq=False)
+class _MatrixTransformBundleSignal(TransformBundleSignal):
+    """A pose-set signal backed by a dense ``(T, N, 4, 4)`` matrix array — the vectorized batch carrier.
+
+    ``_decide`` materializes ``RigidTransform``s lazily (so ``at`` / ``key`` / lifts work normally),
+    but :meth:`resolve_over` reads the raw arrays back with a single batched per-joint quaternion slerp
+    + a numpy translation lerp, bypassing the per-frame Python objects entirely.
+    """
+
+    sampling: Sampling
+    matrices: np.ndarray
+    member_keys: tuple[Hashable, ...]
+    present: np.ndarray | None
+    interpolation: Interpolation
+    boundary: Boundary
+    max_gap: float | None
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        match self.sampling.decide():
+            case Resolvable(base):
+                if self.matrices.shape[0] != base.count:
+                    return Unresolvable(f"{self.matrices.shape[0]} frames for {base.count} sample times")
+                poses: list[BundleValue[RigidTransform]] = []
+                for ti in range(base.count):
+                    members: dict[Hashable, RigidTransform] = {}
+                    for ni, key in enumerate(self.member_keys):
+                        if self.present is None or bool(self.present[ti, ni]):
+                            members[key] = RigidTransform.from_matrix(self.matrices[ti, ni])
+                    poses.append(BundleValue(roster=self.member_keys, members=members))
+                return Resolvable(
+                    SampledSeries(
+                        base.times,
+                        tuple(poses),
+                        self.interpolation,
+                        self.boundary,
+                        TRANSFORM_BUNDLE_BLEND,
+                        support_from_times(base.times, self.max_gap),
+                    )
+                )
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        brackets = dense_grid_brackets(
+            self.sampling, self.matrices.shape[0], self.interpolation, self.boundary, self.max_gap, onto
+        )
+        if brackets is None:
+            return super().resolve_over(onto)
+        lo, hi, frac = brackets
+        count, joints = lo.shape[0], self.matrices.shape[1]
+        mask = np.ones((count, joints), dtype=bool) if self.present is None else (self.present[lo] & self.present[hi])
+        if bool(np.all(frac == 0.0)):
+            # Every target is an exact knot (lo == hi) — the dominant case (resolving onto the track's
+            # own grid). Copy the stored matrices straight through, no slerp round-trip: bit-exact and
+            # pure-indexing fast.
+            out = self.matrices[lo].copy()
+        else:
+            weight = frac.reshape(-1, 1, 1)  # (M, 1, 1)
+            translations = self.matrices[:, :, :3, 3]  # (T, N, 3)
+            moved = (1.0 - weight) * translations[lo] + weight * translations[hi]  # (M, N, 3) — lerp
+            quaternions = Rotation.from_matrix(self.matrices[:, :, :3, :3].reshape(-1, 3, 3)).as_quat()
+            quaternions = quaternions.reshape(self.matrices.shape[0], joints, 4)
+            slerped = _batch_quaternion_slerp(quaternions[lo], quaternions[hi], frac)  # (M, N, 4)
+            rotated = Rotation.from_quat(slerped.reshape(-1, 4)).as_matrix().reshape(count, joints, 3, 3)
+            out = np.zeros((count, joints, 4, 4))
+            out[:, :, :3, :3] = rotated
+            out[:, :, :3, 3] = moved
+            out[:, :, 3, 3] = 1.0
+        out = np.where(mask[..., None, None], out, np.nan)
+        return out, mask
 
 
 @dataclass(frozen=True, eq=False)

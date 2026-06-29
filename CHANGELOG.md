@@ -7,6 +7,22 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-29
+
+### Added
+
+- **`TransformBundleSignal.resolve_over` and `TransformBundleSignal.from_matrices`.** A pose-set
+  signal previously had *no* vectorized readback at all — `resolve_over` now resolves it to a dense
+  `(T, N, 4, 4)` matrix stack + a `(T, N)` present mask (occluded joints `nan` / `False`), the pose
+  companion to the cloud carriers. **`from_matrices(times, (T, N, 4, 4), keys, present)`** is the
+  dense batch carrier (the pose-set analog of `TransformSignal.from_matrices`): it stores the raw
+  `(T, N, 4, 4)` array instead of `T·N` per-frame `Transform` objects, and its `resolve_over`
+  short-circuits an exact-knot grid to a straight matrix copy (bit-exact) and otherwise reads back via
+  a batched per-joint quaternion slerp + a numpy translation lerp — exact-matching the per-instant
+  readback at the sample instants. At T=5000, N=50, resolving onto the signal's own grid: `from_frames`
+  per-instant 313 ms → `from_matrices` **~6 ms (~54×)**. Completes the retarget R1 "un-orphan the
+  adapter" enablement (markers *and* poses). New shared core helper `dense_grid_brackets`.
+
 ## [0.2.3] - 2026-06-29
 
 ### Changed

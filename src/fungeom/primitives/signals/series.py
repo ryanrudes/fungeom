@@ -513,6 +513,43 @@ def resolved_grid(resampled: Signal[Any], to_row: Callable[[Any], Any], fill: An
     return np.array(rows), np.array(masks, dtype=bool)
 
 
+def dense_grid_brackets(
+    sampling: Sampling,
+    frame_count: int,
+    interpolation: Interpolation,
+    boundary: Boundary,
+    max_gap: float | None,
+    onto: Sampling,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """The bracketing ``(lo, hi, frac)`` arrays for the vectorized fast-path readback — or ``None``.
+
+    Shared by every dense bundle carrier (positions via :func:`dense_grid_readback`, poses via the
+    ``TransformBundleSignal`` matrix carrier): it validates the fast-path preconditions and, when they
+    hold, returns for each ``onto`` target the indices of its two bracketing sample frames plus the
+    interpolation fraction (``frac == 0`` at an exact knot, where ``lo == hi`` — the reconstruction
+    contract's short-circuit). Returns ``None`` — defer to the per-instant path — for anything the
+    shortcut does not model: a non-default ``linear``/``undefined`` reconstruction, a ``max_gap``
+    (interior gaps), an Unresolvable or count-mismatched time base, or an off-domain target.
+    """
+    if interpolation is not Interpolation.linear or boundary is not Boundary.undefined or max_gap is not None:
+        return None
+    decided_onto, decided_self = onto.decide(), sampling.decide()
+    if not (isinstance(decided_onto, Resolvable) and isinstance(decided_self, Resolvable)):
+        return None
+    times = np.asarray(decided_self.value.times, dtype=float)
+    target = np.asarray(decided_onto.value.times, dtype=float)
+    if times.shape[0] < 2 or times.shape[0] != frame_count or not bool(np.all(np.diff(times) > 0.0)):
+        return None
+    if target.size == 0 or float(target.min()) < float(times[0]) or float(target.max()) > float(times[-1]):
+        return None
+    hi = np.searchsorted(times, target, side="left")  # times[hi] >= target; in [0, T-1] for in-domain targets
+    exact = times[hi] == target  # an exact knot short-circuits, exactly as Interpolation.linear does
+    lo = np.where(exact, hi, hi - 1)
+    segment = np.where(exact, 1.0, times[hi] - times[lo])  # avoid 0/0 at a knot (lo == hi there)
+    frac = (target - times[lo]) / segment
+    return lo, hi, frac
+
+
 def dense_grid_readback(
     sampling: Sampling,
     frames: np.ndarray,
@@ -522,38 +559,23 @@ def dense_grid_readback(
     max_gap: float | None,
     onto: Sampling,
 ) -> tuple[np.ndarray, np.ndarray] | None:
-    """The vectorized dense readback for a sampled bundle signal — or ``None`` to defer to the generic path.
+    """The vectorized dense readback for a sampled cloud signal — or ``None`` to defer to the generic path.
 
     The bundle analog of ``_MatrixTransformSignal``'s fast ``resolve_over``: a ``from_frames`` cloud
-    already stores its samples as one dense ``(T, N[, C])`` array, so when reconstruction is the
-    default ``linear`` kernel with the ``undefined`` boundary over a gapless (no ``max_gap``), strictly
-    increasing time base and every ``onto`` target lands in-domain, it can be reconstructed in one
-    batched numpy op instead of materializing ``T·N`` per-frame value objects. Exact knots
-    short-circuit (the reconstruction contract); an interior target is the **key-intersection** lerp of
-    its two bracketing frames, so the present mask is ``present[lo] & present[hi]`` (the entity half of
-    the occlusion mask) and an occluded cell is ``nan`` — bit-for-bit the generic
-    :func:`resolved_grid` result. Returns ``None`` (defer to the per-instant path) for anything the
-    shortcut does not model: a non-default kernel/boundary, a ``max_gap`` (interior gaps), an
-    Unresolvable or count-mismatched time base, or an off-domain target.
+    already stores its samples as one dense ``(T, N[, C])`` array, so for an in-domain default
+    reconstruction it can be read back in one batched numpy op (via :func:`dense_grid_brackets`)
+    instead of materializing ``T·N`` per-frame value objects. Exact knots short-circuit; an interior
+    target is the **key-intersection** lerp of its two bracketing frames, so the present mask is
+    ``present[lo] & present[hi]`` (the entity half of the occlusion mask) and an occluded cell is
+    ``nan`` — bit-for-bit the generic :func:`resolved_grid` result.
     """
-    if interpolation is not Interpolation.linear or boundary is not Boundary.undefined or max_gap is not None:
+    brackets = dense_grid_brackets(sampling, frames.shape[0], interpolation, boundary, max_gap, onto)
+    if brackets is None:
         return None
-    decided_onto, decided_self = onto.decide(), sampling.decide()
-    if not (isinstance(decided_onto, Resolvable) and isinstance(decided_self, Resolvable)):
-        return None
-    times = np.asarray(decided_self.value.times, dtype=float)
-    target = np.asarray(decided_onto.value.times, dtype=float)
-    if times.shape[0] < 2 or times.shape[0] != frames.shape[0] or not bool(np.all(np.diff(times) > 0.0)):
-        return None
-    if target.size == 0 or float(target.min()) < float(times[0]) or float(target.max()) > float(times[-1]):
-        return None
-    hi = np.searchsorted(times, target, side="left")  # times[hi] >= target; in [0, T-1] for in-domain targets
-    exact = times[hi] == target  # an exact knot short-circuits, exactly as Interpolation.linear does
-    lo = np.where(exact, hi, hi - 1)
-    segment = np.where(exact, 1.0, times[hi] - times[lo])  # avoid 0/0 at a knot (lo == hi there)
-    frac = ((target - times[lo]) / segment).reshape((target.shape[0],) + (1,) * (frames.ndim - 1))
-    values = (1.0 - frac) * frames[lo] + frac * frames[hi]
-    mask = np.ones((target.shape[0], frames.shape[1]), dtype=bool) if present is None else (present[lo] & present[hi])
+    lo, hi, frac = brackets
+    weight = frac.reshape((frac.shape[0],) + (1,) * (frames.ndim - 1))
+    values = (1.0 - weight) * frames[lo] + weight * frames[hi]
+    mask = np.ones((frac.shape[0], frames.shape[1]), dtype=bool) if present is None else (present[lo] & present[hi])
     values = np.where(mask.reshape(mask.shape + (1,) * (frames.ndim - 2)), values, np.nan)
     return values, mask
 
