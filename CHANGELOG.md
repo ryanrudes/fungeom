@@ -7,6 +7,17 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-29
+
+### Added
+
+- **`Point3.coordinates_in(frame)` → `Vec3` and `Point2.coordinates_in(frame)` → `Vec2`** — the
+  read-side inverse of the `in_frame` constructor: read a world-anchored point's coordinates back in
+  any grounded frame. `Unresolvable` if the frame is ungrounded. Surfaced by a re-audit of `Point3`
+  (the long-deferred *express-in-frame* now earns its place — `Frame` is mature, and returning the
+  coordinate vector rather than a `Point3` sidesteps the world-anchoring invariant). Mirrors the
+  `DisplacementVec3` cross-type pattern; kept in lockstep across `Point3` and `Point2`.
+
 ## [0.4.0] - 2026-06-29
 
 Geometry as data — author a construction over late-bound leaves and bind it later.
@@ -140,7 +151,8 @@ of resolvers where partiality is first-class (`decide()` → `Resolvable` / `Unr
 - **Regions** — `Point2Bundle`, `Region2` (general GEOS-backed boolean algebra + `offset`), `Face`.
 - Ten runnable examples, full wiki + reference docs, 100% test coverage.
 
-[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ryanrudes/fungeom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ryanrudes/fungeom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ryanrudes/fungeom/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/ryanrudes/fungeom/compare/v0.2.2...v0.2.3

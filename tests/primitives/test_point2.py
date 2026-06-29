@@ -70,6 +70,18 @@ def test_frames_and_grounding() -> None:
     assert "not grounded" in decision.reason
 
 
+def test_coordinates_in_inverts_in_frame() -> None:
+    cam = Frame2.world.attach("cam", Transform2.translation(Vec2.of(10, 0)))
+    assert np.allclose(Point2.at(11, 1).coordinates_in(cam).resolve(), [1, 1])  # read a world point back in cam
+    # exact round-trip, even under rotation (a transpose/sign slip would fail)
+    spun = Frame2.world.attach("f", Transform2.rotation(0.7))
+    assert np.allclose(Point2.in_frame(Vec2.of(0.5, -2.0), spun).coordinates_in(spun).resolve(), [0.5, -2.0])
+
+
+def test_coordinates_in_ungrounded_frame_is_unresolvable() -> None:
+    assert isinstance(Point2.at(1, 2).coordinates_in(Frame2.detached("loose")).decide(), Unresolvable)
+
+
 def test_value_methods() -> None:
     cam = WORLD_FRAME2.child("cam", RigidTransform2.from_translation(np.array([10.0, 0.0])))
     local = Point2Value.of(1, 1, frame=cam)
