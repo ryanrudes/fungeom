@@ -103,7 +103,7 @@ they stay current). Start at the top and work down:
 | Script | Shows |
 | --- | --- |
 | [`01_quickstart`](examples/01_quickstart.py) | construct → compose → resolve; scalars flowing across types |
-| [`02_coordinate_frames`](examples/02_coordinate_frames.py) | a kinematic chain; grounding, and why an unplaced frame is `Unresolvable` |
+| [`02_coordinate_frames`](examples/02_coordinate_frames.py) | a kinematic chain; grounding, why an unplaced frame is `Unresolvable`, and reading a point's coordinates back in a frame |
 | [`03_decidability_and_partiality`](examples/03_decidability_and_partiality.py) | value-dependent partialities, reasons, propagation; predicates as decidable `Bool`s |
 | [`04_visualizing_resolvers`](examples/04_visualizing_resolvers.py) | rendering the lazy graph to *see* where an unresolvability lives |
 | [`05_time_and_clocks`](examples/05_time_and_clocks.py) | the temporal layer: durations/instants, intervals & coverage with gaps |
@@ -112,6 +112,7 @@ they stay current). Start at the top and work down:
 | [`08_point_clouds_over_time`](examples/08_point_clouds_over_time.py) | a `Point3Bundle` and a cloud over time — an occluded marker is honestly `Unresolvable` |
 | [`09_regions_and_patches`](examples/09_regions_and_patches.py) | the 2D region algebra, the balance margin, and a bounded-patch `Face` |
 | [`10_contact_over_time`](examples/10_contact_over_time.py) | the contact spine end-to-end; touchdown & release from marker data |
+| [`11_free_variables`](examples/11_free_variables.py) | the unknown as a first-class leaf — author a patch as data over free markers, then `bind`/`resolve_in` their positions |
 
 ```bash
 python examples/01_quickstart.py

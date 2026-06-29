@@ -58,7 +58,16 @@ def main() -> None:
     # --- Placing the base makes the very same construction resolvable -----
     placed_base = Frame.world.attach("base", Transform.translation([10, 0, 0]))
     placed = two_link_arm(placed_base, 0.0, 0.0, 1.0, 1.0)
-    print("placed arm tip   :", placed.resolve().coord)  # shifted by the base
+    print("placed arm tip   :", placed.resolve().coord)  # shifted by the base -> [12, 0, 0]
+
+    # --- Reading a point's coordinates back IN a frame --------------------
+    # `Point3.at(..., frame=f)` builds a point FROM coordinates in a frame; `coordinates_in` is the
+    # inverse — it reads a (world-anchored) point's coordinates back in any grounded frame. Where
+    # does the world-space tip sit in the *base*'s own frame? (10 m nearer the origin: [2, 0, 0].)
+    print("tip in base coords:", placed.coordinates_in(placed_base).resolve())
+    # An ungrounded frame has no world-relative coordinates -> Unresolvable, like everything else.
+    loose = tip.coordinates_in(Frame.detached("nowhere")).decide()
+    print("tip in a loose frame:", "Unresolvable —", loose.reason if isinstance(loose, Unresolvable) else loose)
 
 
 if __name__ == "__main__":
