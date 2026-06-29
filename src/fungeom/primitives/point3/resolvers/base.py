@@ -7,7 +7,7 @@ acyclic. (Vector types live in a lower layer and are imported normally.)
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Hashable, Iterable, Sequence
 
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolver import Resolver
@@ -89,6 +89,22 @@ class Point3(Resolver[Point3Value]):
         from fungeom.primitives.point3.resolvers.affine import affine_combination
 
         return affine_combination(points, weights)
+
+    @classmethod
+    def free(cls, identity: Hashable) -> Point3:
+        """A late-bound point identified by ``identity`` — ``Unresolvable`` until bound.
+
+        The unknown as a first-class leaf: a ``Point3`` that has no position yet, carrying
+        an opaque :class:`~collections.abc.Hashable` ``identity``. It composes through the
+        whole algebra like any other point (``Point3Bundle.of([Point3.free(a), …])`` has a
+        ``fit_plane``, that has a ``Face``, …); :meth:`~fungeom.core.resolver.Resolver.bind`
+        / :meth:`~fungeom.core.resolver.Resolver.resolve_in` fill it in from an
+        ``identity -> resolver`` environment. Lets a construction be authored as data over
+        late-bound references (e.g. markers) instead of an imperative callable.
+        """
+        from fungeom.primitives.point3.resolvers.free import FreePoint3
+
+        return FreePoint3(identity=identity)
 
     def translate(self, offset: Vec3 | Float3 | ArrayLike) -> Point3:
         """Translate this point by a world-frame displacement."""

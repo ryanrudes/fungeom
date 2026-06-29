@@ -143,7 +143,7 @@ particular inputs, discovered by deciding.
 | `Frame` | `world`, `detached`, `known` | `attach(name, transform)`, `relative_to` | detached (ungrounded) frame |
 | `Frame2` | `world`, `detached`, `known` | `attach(name, transform)`, `relative_to` (→ `Transform2`) | detached (ungrounded) frame |
 | `Point2` | `at`, `in_frame`, `centroid`, `affine` | `translate`, `lerp`, `midpoint`, `displacement_to` (→ `Vec2`), `distance_to` (→ `Scalar`), `direction_to` (→ `Direction2`), `transformed_by` (`Transform2`), `reflect_across` | empty / zero-total-weight combos; coincident points; ungrounded frame |
-| `Point3` | `at`, `in_frame`, `centroid`, `affine` | `translate`, `lerp`, `midpoint`, `displacement_to`, `distance_to`, `direction_to`, `transformed_by`, `reflect_across` | empty / zero-total-weight combos; coincident points; ungrounded frame |
+| `Point3` | `at`, `in_frame`, `centroid`, `affine`, `free` (a late-bound leaf — see [Free variables](#free-variables)) | `translate`, `lerp`, `midpoint`, `displacement_to`, `distance_to`, `direction_to`, `transformed_by`, `reflect_across` | empty / zero-total-weight combos; coincident points; ungrounded frame; an unbound `free` leaf |
 | `Plane` (oriented surface) | `through` (point + normal), `through_points`, `spanned_by` | `normal`/`origin`, `project` (→ `Point3`), `signed_distance`/`distance_to` (→ `Scalar`), `contains` (→ `Bool`) — `project`/`signed_distance`/`contains` also **broadcast over a `Point3Bundle`** (→ `Point3Bundle`/`ScalarBundle`/`BoolBundle`, per-marker, occlusion-aware), `facing` (orient normal toward a point), `flipped`, `offset` (parallel shift), `project_direction` (in-plane component → `Direction3`), `frame` (surface coordinate frame → `Transform`), `to_local` (a `Point3` → its 2D chart coordinates → `Point2`) / `embed` (a `Point2` chart coordinate → the world `Point3` on the plane — mutual inverses), `winding_normal` (orient by a polygon's winding → `Direction3`), `intersect` (the line where two planes meet → `Line`), `transformed_by` (rigid motion → `Plane`) | `through_points` collinear / `spanned_by` parallel; `facing` a point *on* the plane; `project_direction`/`frame` a direction parallel to the normal; `winding_normal` a zero-area loop; `intersect` parallel planes |
 | `Line` (oriented line) | `through` (point + direction), `through_points` | `direction`/`origin`, `project` (→ `Point3`), `distance_to` (→ `Scalar`), `contains` (→ `Bool`), `point_at` (signed arc-length → `Point3`), `direction_along` (orient by an ordered run of points → `Direction3`) | `through_points` coincident; `direction_along` points not in coherent monotone order |
 | `Ray` (half-line, t ≥ 0) | `through` (origin + direction), `from_to` (origin + target) | `origin`/`direction`, `project`/`distance_to` (clamped behind the origin → `Point3`/`Scalar`), `contains` (→ `Bool`), `point_at` (march a distance → `Point3`), `reversed`, `intersect` (raycast a `Plane` → `Point3`) | `from_to` coincident origin/target; `point_at` a negative distance; `intersect` parallel-to / behind the plane |
@@ -205,6 +205,50 @@ print(resolver_tree(Point3.centroid([a, b, loose]).translate(Vec3.of(10, 0, 0)))
 # └── LiteralVec3 = array([10.,  0.,  0.])
 ```
 
+## Free variables
+
+The unknown is a *leaf*. `Point3.free(identity)` is a `Point3` that has no position
+yet — `Unresolvable` on its own — carrying an opaque, hashable `identity`. Because it
+is just a leaf, it composes through the **entire** algebra like any other point: a
+bundle of free points has a `fit_plane`, that plane carries a `Face`, and so on. You
+author the whole construction as data, then fill in the leaves later. This is exactly
+the partiality model (a free var is a node that is `Unresolvable` until you supply it),
+not a bolt-on.
+
+`bind(env)` is the keystone: a **structural rewrite** that walks the immutable graph and
+swaps each free leaf — by `identity` — for the resolver in `env`, returning a *new* graph
+the ordinary `decide`/`resolve` machinery then evaluates unchanged. A subgraph with no
+(bound) frees is returned *as is*, so binding a fully concrete graph is a no-op and you
+can call `bind` unconditionally.
+
+```python
+from fungeom import Point3, Point3Bundle, Region2, Face
+
+heel, toe, mid = object(), object(), object()        # opaque identities (here, bare tokens)
+cloud = Point3Bundle.of([Point3.free(heel), Point3.free(toe), Point3.free(mid)])
+plane = cloud.fit_plane()
+patch = Face.on(plane, Region2.hull(cloud.in_frame(plane)))   # a value you can hold and pass
+
+patch.free_variables()        # frozenset({heel, toe, mid}) — what this graph still needs
+patch.decide()                # Unresolvable: 'free variable <…> is unbound' (true as it stands)
+
+env = {heel: Point3.at(0, 0, 0), toe: Point3.at(1, 0, 0), mid: Point3.at(0, 1, 0)}
+patch.bind(env)               # -> a Face (same primitive type), now fully concrete & lazy
+patch.resolve_in(env)         # -> FaceValue, identical to building the patch from concrete points
+patch.decide_in({heel: Point3.at(0, 0, 0)})   # Unresolvable, naming the still-unbound toe, mid
+```
+
+The env-aware surface lives on `Resolver`, so it is available on every primitive: `bind`
+(the structural rewrite → the same primitive type), `resolve_in` / `decide_in` (bind, then
+resolve / decide — `decide_in` names *all* still-unbound identities), and `free_variables`
+(introspect what a graph needs). The plain `decide()` / `resolve()` are unchanged: "is this
+resolvable *as it stands*?" and "is it resolvable *under this binding*?" are two honest
+questions with two answers. Identity is **object identity** — you bind by the very object you
+referenced, so a mistyped reference is a `NameError`, never a silent string key. Today only
+`Point3.free` exists (the motivating need); the binding machinery is generic, so a free
+`Scalar`/`Vec3`/`Transform` is a small addition when one is needed. See
+[`docs/free-variables.md`](free-variables.md) for the design and the retarget motivation.
+
 ## Examples
 
 Runnable, commented scripts live in [`examples/`](examples/) (each is exercised
@@ -237,7 +281,7 @@ the public API.
 
 | Module | Responsibility |
 | --- | --- |
-| `core.resolver` | The `Resolver[T]` interface (`decide` primitive; `resolve`/`is_resolvable`/`children` derived) |
+| `core.resolver` | The `Resolver[T]` interface (`decide` primitive; `resolve`/`is_resolvable`/`children` derived; `bind`/`resolve_in`/`decide_in`/`free_variables` for late-bound leaves) |
 | `core.resolvability` | `Resolvable` / `Unresolvable` evidence, `gather`, `UnresolvableError` |
 | `core.arrays` | Generic numpy helpers (`freeze`, `ArrayLike`) — no geometry |
 | `primitives.<name>` | One per primitive: `boolean`, `scalar`, `vec2`, `vec3`, `direction3`, `transform`, `frame`, `point3` (+ the temporal family) |

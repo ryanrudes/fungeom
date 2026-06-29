@@ -25,7 +25,7 @@ a partiality test if it can be `Unresolvable` for some inputs; a case in
 `tests/cross_cutting/test_propagation.py` for **each resolver-typed input
 position**; and a row in the combinator table (docs/reference.md).
 
-**Current status:** 1319 tests · **100 % line coverage** (enforced via
+**Current status:** 1346 tests · **100 % line coverage** (enforced via
 `fail_under = 100`) · `ruff` clean · `mypy --strict` clean.
 
 > **Adversarial review done (2026-06-25):** a multi-agent correctness + test-honesty review of
@@ -132,6 +132,7 @@ application/numerics depth) and the two open foundational items (a `Bool`/
 | --- | :-: | :-: | :-: | --- |
 | `Resolver` (`decide`/`resolve`/`is_resolvable`/`children`) | ✅ | ✅ | ✅ | `core/test_resolver.py` |
 | `decide()` memoization | ✅ | ✅ | ✅ | `core/test_resolver.py` |
+| free variables: `bind` / `resolve_in` / `decide_in` / `free_variables` (structural substitution; `decide`/`resolve` left unchanged) | ✅ | ✅ | ✅ | `core/test_substitution.py`, `cross_cutting/test_free_variables.py` |
 | `Resolvable` / `Unresolvable` / `UnresolvableError` | ✅ | ✅ | ✅ | `core/test_resolvability.py` |
 | `gather` (incl. empty) | ✅ | ✅ | ✅ | `core/test_resolvability.py` |
 | `core.arrays` (`freeze`, `ArrayLike`) | ✅ | ✅ | ✅ | `core/test_arrays.py` |
@@ -333,12 +334,15 @@ The 2D sibling of `Point3` (the capstone of the **2D geometry stack**) — a pos
 ## Point3 — value: `Point3Value` (a framed position)
 
 **Constructors:** `at(x,y,z, frame)` (deferred coords + value/resolver frame),
-`in_frame(vec, frame)`, `centroid(points)`, `affine(points, weights)`.
+`in_frame(vec, frame)`, `centroid(points)`, `affine(points, weights)`,
+`free(identity)` (a late-bound leaf, `Unresolvable` until `bind` — see
+[Core & supporting machinery](#core--supporting-machinery) and `docs/free-variables.md`).
 Resolving world-anchors; partial when the frame is ungrounded.
 
 | Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | `at` | `LocatedPoint3` / `FramedPoint3` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
+| `free` | `FreePoint3` (late-bound leaf) | ✅ | ✅ | ✅ | ✅ (unbound) | — (leaf) | ✅ |
 | `in_frame` | `FramedPoint3` | ✅ | ✅ | ✅ | ✅ (ungrounded) | ✅ | ✅ |
 | `centroid` | `Centroid3` | ✅ | ✅ | ✅ | ✅ (empty) | ✅ | ✅ |
 | `affine` | `AffineCombination3` | ✅ | ✅ | ✅ | ✅ (empty, Σw=0) | ✅ | ✅ |
