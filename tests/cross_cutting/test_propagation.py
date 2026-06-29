@@ -987,6 +987,9 @@ CASES: dict[str, Callable[[], object]] = {
     # transform bundle signal (pose-set over time; no key() — partial SE(3) blend)
     "tbsignal.from_frames.sampling": lambda: TransformBundleSignal.from_frames([1, 0], [[GOOD_T], [GOOD_T]]),
     "tbsignal.from_frames.member": lambda: TransformBundleSignal.from_frames([0, 1], [[BAD_T], [GOOD_T]]),
+    "tbsignal.from_matrices.sampling": lambda: TransformBundleSignal.from_matrices(
+        [1, 0], [[GOOD_T.resolve().matrix], [GOOD_T.resolve().matrix]]
+    ),
     "tbsignal.at.signal": lambda: BAD_TBS.at(GOOD_I),
     "tbsignal.at.instant": lambda: GOOD_TBS.at(BAD_I),
     "tbsignal.over": lambda: BAD_TBS.over(),

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from scipy.spatial.transform import Rotation
 
 from fungeom import (
     Instant,
+    Interpolation,
     Interval,
     Sampling,
     Scalar,
@@ -15,6 +17,7 @@ from fungeom import (
     TransformBundle,
     TransformBundleSignal,
     Unresolvable,
+    UnresolvableError,
     Vec3,
 )
 from fungeom.values import IntervalValue, RigidTransform, SampledSeries
@@ -175,3 +178,72 @@ def test_key_projection_matches_at() -> None:
     clip = _clip()
     assert np.isclose(_angle(clip.key("J0").at(1.0).resolve()), 45.0)
     assert np.allclose(clip.at(1.0).at("J0").resolve().rotation, clip.key("J0").at(1.0).resolve().rotation)
+
+
+def _random_matrices(num_times: int, num_joints: int, seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    mats = np.tile(np.eye(4), (num_times, num_joints, 1, 1))
+    mats[:, :, :3, :3] = Rotation.random(num_times * num_joints, rng).as_matrix().reshape(num_times, num_joints, 3, 3)
+    mats[:, :, :3, 3] = rng.standard_normal((num_times, num_joints, 3))
+    return mats
+
+
+def _from_frames_equiv(times: np.ndarray, mats: np.ndarray, present: np.ndarray | None = None) -> TransformBundleSignal:
+    rows = [
+        [Transform.known(RigidTransform.from_matrix(mats[t, n])) for n in range(mats.shape[1])]
+        for t in range(mats.shape[0])
+    ]
+    return TransformBundleSignal.from_frames(times, rows, present=present)
+
+
+def test_from_matrices_carrier_matches_generic_and_falls_back() -> None:
+    # the dense (T, N, 4, 4) carrier's batched resolve_over (exact-knot copy + per-joint slerp/lerp)
+    # equals the generic per-instant readback to machine precision — including occlusion — and defers
+    # to the generic path for anything the shortcut does not model.
+    times = np.arange(6) * 0.5
+    mats = _random_matrices(6, 4, 0)
+    present = np.ones((6, 4), dtype=bool)
+    present[3, 1] = False  # occlude joint 1 at t = 1.5
+    dense = TransformBundleSignal.from_matrices(times, mats, present=present)
+    generic = _from_frames_equiv(times, mats, present)
+
+    for onto in (times, times[:-1] + 0.25, times[::2]):  # exact knots (copy), between-sample (slerp), subset
+        fast_v, fast_m = dense.resolve_over(Sampling.at_times(onto))
+        ref_v, ref_m = generic.resolve_over(Sampling.at_times(onto))
+        assert np.array_equal(fast_m, ref_m)
+        assert np.allclose(fast_v[fast_m], ref_v[ref_m])
+        assert np.array_equal(np.isnan(fast_v).all(axis=(-1, -2)), np.isnan(ref_v).all(axis=(-1, -2)))
+
+    # resolving onto the carrier's own grid is bit-exact (the copy path, no slerp round-trip)
+    values, mask = dense.resolve_over(Sampling.at_times(times))
+    assert np.array_equal(values[mask], mats[mask])
+
+    # the near-parallel slerp branch: two equal consecutive rotations, resolved strictly between them
+    equal = _random_matrices(3, 2, 1)
+    equal[1, :, :3, :3] = equal[0, :, :3, :3]
+    near = TransformBundleSignal.from_matrices([0.0, 1.0, 2.0], equal)
+    near_ref = _from_frames_equiv(np.array([0.0, 1.0, 2.0]), equal)
+    assert np.allclose(  # t=0.5 hits the near branch, t=1.5 the general slerp
+        near.resolve_over(Sampling.at_times([0.5, 1.5]))[0], near_ref.resolve_over(Sampling.at_times([0.5, 1.5]))[0]
+    )
+
+    assert isinstance(TransformBundleSignal.from_matrices(times, mats[:5]).decide(), Unresolvable)  # count mismatch
+    held = TransformBundleSignal.from_matrices(times, mats, via=Interpolation.hold)  # non-default kernel → generic
+    assert held.resolve_over(Sampling.at_times(times[:-1] + 0.25))[0].shape == (5, 4, 4, 4)
+    with pytest.raises(UnresolvableError):
+        dense.resolve_over(Sampling.at_times([times[-1] + 1.0]))  # off-domain → generic raises
+
+
+def test_pose_set_resolve_over_reads_back_a_dense_matrix_stack() -> None:
+    # the generic facade resolve_over (per-instant) makes any pose-set bulk-readable as (T, N, 4, 4) + mask
+    mats = _random_matrices(2, 3, 2)
+    occ = TransformBundleSignal.from_frames(
+        [0.0, 2.0],
+        [[Transform.known(RigidTransform.from_matrix(mats[t, n])) for n in range(3)] for t in range(2)],
+        present=[[True, True, True], [True, False, True]],  # joint 1 occluded at t = 2
+    )
+    values, mask = occ.resolve_over(Sampling.at_times([0.0, 2.0]))
+    assert values.shape == (2, 3, 4, 4)
+    assert mask.tolist() == [[True, True, True], [True, False, True]]
+    assert np.isnan(values[1, 1]).all()  # occluded pose → nan with a False mask
+    assert np.allclose(values[0, 0], mats[0, 0])  # present poses read back exactly
