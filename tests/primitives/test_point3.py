@@ -13,10 +13,12 @@ from fungeom import (
     CoordinateFrame,
     Frame,
     Point3,
+    Resolvable,
     RigidTransform,
     Scalar,
     Transform,
     Unresolvable,
+    UnresolvableError,
     Vec3,
 )
 
@@ -110,6 +112,48 @@ def test_propagation(bad: object) -> None:
     assert isinstance(Point3.at(bad.scalar, 0, 0).decide(), Unresolvable)  # type: ignore[attr-defined]
     assert isinstance(Point3.centroid([a, bad.point3]).decide(), Unresolvable)  # type: ignore[attr-defined]
     assert isinstance(Point3.affine([a, bad.point3], [1, 1]).decide(), Unresolvable)  # type: ignore[attr-defined]
+
+
+# --- free variables (late-bound leaves) ------------------------------------
+
+
+def test_free_leaf_is_unresolvable_until_bound() -> None:
+    marker = object()
+    free = Point3.free(marker)
+    decision = free.decide()
+    assert isinstance(decision, Unresolvable)
+    assert repr(marker) in decision.reason  # the reason names the unbound variable
+    assert free.is_resolvable is False
+    assert free.free_variables() == frozenset((marker,))
+
+
+def test_free_leaf_binds_and_resolves() -> None:
+    marker = object()
+    free = Point3.free(marker)
+    env = {marker: Point3.at(1, 2, 3)}
+    assert isinstance(free.decide_in(env), Resolvable)
+    assert np.allclose(free.resolve_in(env).coord, [1, 2, 3])
+    assert free.bind(env).resolve().coord.tolist() == [1, 2, 3]  # bind -> ordinary resolve
+
+
+def test_free_leaf_missing_binding_is_unresolvable() -> None:
+    a, b = object(), object()
+    graph = Point3.free(a).midpoint(Point3.free(b))
+    decision = graph.decide_in({a: Point3.at(0, 0, 0)})  # b left unbound
+    assert isinstance(decision, Unresolvable)
+    assert repr(b) in decision.reason
+    with pytest.raises(UnresolvableError):
+        graph.resolve_in({a: Point3.at(0, 0, 0)})
+
+
+def test_free_identity_is_object_identity() -> None:
+    a, b = object(), object()
+    pa, pb = Point3.free(a), Point3.free(b)
+    assert pa.displacement_to(pb).free_variables() == frozenset((a, b))  # two distinct unknowns
+    # The same identity in two places is one variable, bound once.
+    same = Point3.free(a).distance_to(Point3.free(a))
+    assert same.free_variables() == frozenset((a,))
+    assert same.resolve_in({a: Point3.at(5, 0, 0)}) == 0.0  # a point's distance to itself
 
 
 # --- value type behavior ---------------------------------------------------

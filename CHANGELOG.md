@@ -7,6 +7,34 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-29
+
+Geometry as data — author a construction over late-bound leaves and bind it later.
+
+### Added
+
+- **Free-variable leaves — `Point3.free(identity)`.** A `Point3` that has no position yet:
+  `Unresolvable` on its own, tagged with an opaque `Hashable` identity, and composing through the
+  *entire* algebra like any other point (a bundle of free points has a `fit_plane`, that plane carries
+  a `Face`, …). The unknown becomes a first-class leaf — exactly fungeom's partiality model applied to
+  a leaf — so a whole construction can be authored as immutable data over late-bound references (e.g.
+  motion-capture markers whose positions arrive only at bind time) instead of an imperative callable.
+- **`bind` / `resolve_in` / `decide_in` / `free_variables` on `Resolver`** (so every primitive has
+  them). `bind(env)` is the keystone: a **structural rewrite** that walks the immutable graph and
+  substitutes each free leaf — by identity — from an `identity → resolver` environment, returning a
+  *new* graph of the **same primitive type** (`Face.bind → Face`) that the ordinary `decide` /
+  `resolve` machinery then evaluates unchanged. A subgraph with no (bound) frees is returned *as is*,
+  so binding a fully concrete graph is a no-op (DAG sharing and the cached decision survive) and `bind`
+  can be called unconditionally. `resolve_in` / `decide_in` bind then resolve / decide (`decide_in`
+  names **all** still-unbound identities); `free_variables()` reports what a graph still needs.
+  `decide()` / `resolve()` are **unchanged** — "resolvable as it stands?" and "resolvable *under* this
+  binding?" stay two honest, distinct questions. Identity is **object identity**, so a mistyped
+  reference is a `NameError`, never a silent string key.
+
+Only `Point3.free` ships today (the motivating need); the binding machinery is generic in the core, so
+a free `Scalar` / `Vec3` / `Transform` is a small future addition. See
+[`docs/free-variables.md`](docs/free-variables.md).
+
 ## [0.3.0] - 2026-06-29
 
 ### Added
@@ -112,6 +140,11 @@ of resolvers where partiality is first-class (`decide()` → `Resolvable` / `Unr
 - **Regions** — `Point2Bundle`, `Region2` (general GEOS-backed boolean algebra + `offset`), `Face`.
 - Ten runnable examples, full wiki + reference docs, 100% test coverage.
 
-[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ryanrudes/fungeom/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/ryanrudes/fungeom/compare/v0.2.3...v0.3.0
+[0.2.3]: https://github.com/ryanrudes/fungeom/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/ryanrudes/fungeom/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/ryanrudes/fungeom/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ryanrudes/fungeom/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ryanrudes/fungeom/releases/tag/v0.1.0
