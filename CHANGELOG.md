@@ -7,6 +7,20 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-29
+
+### Changed
+
+- **Vectorized `Point3BundleSignal` / `ScalarBundleSignal` `resolve_over`.** The dense `(T, N, 3)` /
+  `(T, N)` cloud carriers built by `from_frames` now read back in one batched numpy interpolation —
+  the cloud analog of `TransformSignal.from_matrices` — instead of materializing `T·N` per-frame value
+  objects. Exact knots short-circuit and an interior target is the **key-intersection** lerp of its
+  bracketing frames, so the result (coordinates *and* the occlusion mask) is bit-for-bit the
+  per-instant readback; any reconstruction the shortcut can't model (a `hold`/`nearest` kernel, a
+  `max_gap`, an off-domain target) transparently falls back to the generic path. No API change — the
+  existing `from_frames` carrier just got fast. At T=5000, N=50: same-grid 66 → ~2.7 ms (~25×), a
+  between-sample grid 803 → ~2.6 ms (~300×). New shared core helper `dense_grid_readback`.
+
 ## [0.2.2] - 2026-06-27
 
 ### Fixed

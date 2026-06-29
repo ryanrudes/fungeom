@@ -59,6 +59,7 @@ from fungeom.primitives.signals.series import (
     decide_restricted,
     decide_sample,
     decide_warped,
+    dense_grid_readback,
     resolved_grid,
     support_from_times,
 )
@@ -430,6 +431,19 @@ class _SampledPoint3BundleSignal(Point3BundleSignal):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N, 3)`` array + ``(T, N)`` present mask.
+
+        The vectorized batch carrier (the cloud analog of ``TransformSignal.from_matrices``): reads
+        the stored ``(T, N, 3)`` frame stack back in one batched numpy interpolation, skipping the
+        per-frame ``Point3`` materialization; falls back to the generic per-instant path for any
+        reconstruction the shortcut does not model.
+        """
+        fast = dense_grid_readback(
+            self.sampling, self.frames, self.present, self.interpolation, self.boundary, self.max_gap, onto
+        )
+        return fast if fast is not None else super().resolve_over(onto)
 
 
 @dataclass(frozen=True, eq=False)
@@ -914,6 +928,18 @@ class _SampledScalarBundleSignal(ScalarBundleSignal):
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
+        """Resample onto ``onto`` and resolve to a dense ``(T, N)`` array + ``(T, N)`` present mask.
+
+        The vectorized readback of the contact-clearance field: reads the stored ``(T, N)`` frame
+        stack back in one batched numpy interpolation, skipping per-frame materialization; falls back
+        to the generic per-instant path for any reconstruction the shortcut does not model.
+        """
+        fast = dense_grid_readback(
+            self.sampling, self.frames, self.present, self.interpolation, self.boundary, self.max_gap, onto
+        )
+        return fast if fast is not None else super().resolve_over(onto)
 
 
 @dataclass(frozen=True, eq=False)
