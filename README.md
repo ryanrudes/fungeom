@@ -1,6 +1,6 @@
 <h1 align="center">fungeom</h1>
 
-<p align="center"><em>Functional geometry as an immutable, decidable resolver graph.</em></p>
+<p align="center"><em>A decidability substrate — immutable, lazily-evaluated resolver graphs where partiality is first-class. Geometry is instance #1.</em></p>
 
 <p align="center">
   <a href="https://github.com/ryanrudes/fungeom/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ryanrudes/fungeom/actions/workflows/ci.yml/badge.svg"></a>
@@ -11,15 +11,25 @@
 
 ---
 
-fungeom is a Python library for building geometry as a **lazy, immutable graph** you can *reason
-about before you compute it*. You compose points, vectors, frames, transforms, time-signals, and
-regions; ask whether the result **can** be resolved; and — when it can't — get back a *reason*,
-not an exception or a silent `NaN`.
+fungeom is a **decidability substrate** — a Python library for building computation as a **lazy,
+immutable graph** you can *reason about before you compute it*. You compose typed values, ask whether
+the result **can** be resolved, and — when it can't — get back a *reason*, not an exception or a
+silent `NaN`.
 
-Its one big idea: **partiality is first-class**. A geometric question with no answer (a point in a
-frame that was never placed, a direction from a zero-length vector, a marker occluded mid-capture)
-is an honest `Unresolvable` *with an explanation that propagates through everything built on top of
-it* — never a crash, never an invented number.
+**Geometry is instance #1** and the most developed: you build points, vectors, frames, transforms,
+time-signals, and regions, and every question about them is decidable. **Time is instance #2** — the
+same machinery, one dimension down — and the two *compose* (a signal is a value that moves). The
+substrate isn't geometry-specific; geometry is just the first thing modeled in it, and "anything
+honestly decidable" is the goal.
+
+Its one big idea: **partiality is first-class**. A question with no answer (a point in a frame that
+was never placed, a direction from a zero-length vector, a marker occluded mid-capture) is an honest
+`Unresolvable` *with an explanation that propagates through everything built on top of it* — never a
+crash, never an invented number. And that partiality is the *bottom of an uncertainty lattice*: binary
+(`Resolvable` / `Unresolvable`) today, but **designed to grade** toward `resolvable-within-ε` and
+beyond — a refinement of fungeom's own partiality, not a bolt-on. What belongs in the substrate is
+therefore selected on *honesty and referential transparency*, not on the kind of math
+([what belongs here](docs/substrate-membership.md)).
 
 ```python
 from fungeom import Point3, Frame, Resolvable, Unresolvable
@@ -124,6 +134,9 @@ python examples/01_quickstart.py
   layer, and how to add a primitive.
 - **[`docs/reference.md`](docs/reference.md)** — the complete combinator table, architecture, and
   design notes.
+- **What belongs here** — [`docs/substrate-membership.md`](docs/substrate-membership.md): fungeom as
+  a general decidability substrate (geometry instance #1, time #2), and the
+  honest-referential-transparency rule for what is admitted vs. parked.
 - **Deep dives** — [`docs/time.md`](docs/time.md), [`docs/collections.md`](docs/collections.md),
   [`docs/regions.md`](docs/regions.md).
 

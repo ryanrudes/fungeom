@@ -7,14 +7,23 @@ procedures for adding a primitive or combinator).
 
 ## What this is
 
-A functional geometry API: geometry is an immutable, lazily-evaluated graph of
-**resolvers**. Each primitive — `Bool`, `Scalar`, `Vec2`, `Vec3`, `Direction3`,
-`Transform`, `Frame`, `Point3` (plus the temporal family) — is **one class** you both construct from
-(classmethods like `Vec3.of`, `Point3.at`) and compose with (fluent methods like
-`a.midpoint(b)`). `decide()` proves whether a graph can be resolved (returning
-`Resolvable` with the value or `Unresolvable` with a reason); `resolve()` produces
-the value. The whole point is that *partiality is first-class*: a geometric op
-with no answer is `Unresolvable`, not an exception, and that propagates.
+A **decidability substrate**: an immutable, lazily-evaluated, composable graph of
+**resolvers** over typed values, with *partiality first-class*. `decide()` proves
+whether a graph resolves (returning `Resolvable` with the value or `Unresolvable`
+with a reason); `resolve()` produces the value. A question with no answer is an
+honest, *propagating* `Unresolvable` — never an exception or a silent `NaN`.
+
+**Geometry is instance #1** (`Bool`, `Scalar`, `Vec2`, `Vec3`, `Direction3`,
+`Transform`, `Frame`, `Point3`), **time is instance #2** (the temporal / signal
+family), and "anything honestly decidable" is the goal. Each primitive is **one
+class** you both construct from (classmethods like `Vec3.of`, `Point3.at`) and
+compose with (fluent methods like `a.midpoint(b)`). The partiality lattice is
+binary *today* and **designed to grade**: `exact → resolvable-to-ε →
+distributional` is one refinement of fungeom's *own* notion of partiality
+(partiality ⊇ uncertainty; the parked depth-B RFC), not a foreign axis. So what
+belongs here is selected on **honest referential transparency, not "kind of
+math"** — the membership rule, to apply when adding anything, is
+[`docs/substrate-membership.md`](docs/substrate-membership.md).
 
 ## Commands
 
@@ -85,7 +94,11 @@ reverse.
 
 ## Adding a primitive or combinator
 
-Follow the procedures in [`CHECKLIST.md`](CHECKLIST.md). In short: implement the
+**First confirm it *belongs*** — apply the membership test (honest referential
+transparency, no *hidden* modeling opinion; seeds/tolerances reified, approximations
+surfaced through `decide()`): [`docs/substrate-membership.md`](docs/substrate-membership.md),
+the §"What this is" rule applied at authoring time. Then follow the procedures in
+[`CHECKLIST.md`](CHECKLIST.md). In short: implement the
 private resolver + the facade method (both documented) → return `Unresolvable`
 for partial cases → add a unit test, a partiality test, and propagation cases
 (one per resolver input position) → add a docs/reference.md combinator-table row → tick the

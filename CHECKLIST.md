@@ -902,6 +902,13 @@ sole partial op (a non-injective map has no inverse — the analog of a zero-rat
 
 ## Procedure: adding a new combinator
 
+0. **Membership check — do this first.** Confirm the op *belongs* in the substrate:
+   it is **referentially transparent** (every seed / initial-guess / tolerance reified
+   as an explicit input) and **honestly resolvable** (`decide()` carries success,
+   failure, and any approximation — never a silent `NaN` or best-effort return), and it
+   bakes no *hidden* modeling commitment. Select on honesty, **not "kind of math"** —
+   see [`docs/substrate-membership.md`](docs/substrate-membership.md). If it can't be
+   expressed that way, it stays out.
 1. **Implement** the concrete resolver in `primitives/<p>/resolvers/<name>.py` and
    the fluent method / classmethod on the facade (`<p>/resolvers/base.py`). Give
    both **docstrings**.
@@ -916,6 +923,12 @@ sole partial op (a non-injective map has no inverse — the analog of a zero-rat
 8. Run `pytest --cov=fungeom` (must stay at 100 %) + `ruff` + `mypy`.
 
 ## Procedure: adding a new primitive
+
+**First, the membership check** ([`docs/substrate-membership.md`](docs/substrate-membership.md)): a
+new primitive must be an honestly-decidable, referentially-transparent domain (seeds and tolerances
+reified as explicit inputs; approximations surfaced through `decide()`, never hidden). fungeom is a
+decidability substrate and a primitive is an additive **domain** in it — admitted on honest
+transparency, not on "kind of math," and never as kitchen-sink accretion. Then:
 
 Follow the per-primitive template under `primitives/<name>/` (`value.py`,
 `decidability.py`, `resolvers/` with `base.py` facade + one file per resolver).
