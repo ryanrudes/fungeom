@@ -47,9 +47,12 @@ has no rings.
 
 The exact, combinatorial geometry (convex hull, point-in-polygon, shoelace) is **in scope**, and
 so is **general polygon clipping/offsetting — delegated to GEOS via `shapely`**, the same "call a
-battle-tested numeric engine, surface degeneracy as `Unresolvable`" stance as the SVD fits.
-Anything statistical/iterative (RANSAC, smoothing, fitted surfaces) stays parked retarget-side.
-This is the governing rule for the whole substrate.
+battle-tested numeric engine, surface degeneracy as `Unresolvable`" stance as the SVD fits. RANSAC
+and other *hidden-RNG / hidden-threshold* fits stay parked retarget-side. This is the substrate's
+membership rule applied to its geometry instance: **admit what is honestly, referentially-transparently
+decidable** (every seed and tolerance an explicit input, every approximation surfaced through
+`decide()`), **park what hides a modeling commitment** — select on honesty, not "kind of math." The
+canonical statement is [`substrate-membership.md`](substrate-membership.md).
 
 ## Built so far (G1 core)
 
