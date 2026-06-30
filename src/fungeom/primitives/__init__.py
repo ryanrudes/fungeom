@@ -24,7 +24,7 @@ from fungeom.primitives.line import Line, LineValue
 from fungeom.primitives.line2 import Line2, Line2Value
 from fungeom.primitives.plane import Plane, PlaneValue
 from fungeom.primitives.point2 import Point2, Point2Value
-from fungeom.primitives.point3 import Point3, Point3Value
+from fungeom.primitives.point3 import Point3, Point3Value, SupportsPoint3
 from fungeom.primitives.ray import Ray, RayValue
 from fungeom.primitives.ray2 import Ray2, Ray2Value
 from fungeom.primitives.roster import Roster, RosterValue
@@ -85,6 +85,7 @@ __all__ = [
     "Frame2",
     "Point2",
     "Point3",
+    "SupportsPoint3",
     "Plane",
     "Region2",
     "Face",

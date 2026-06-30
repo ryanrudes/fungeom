@@ -14,6 +14,7 @@ from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.direction3.resolvers.base import Direction3
 from fungeom.primitives.plane.resolvers.base import Plane
+from fungeom.primitives.point3.coercion import SupportsPoint3, _as_point3
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.ray.value import RayValue
 from fungeom.primitives.scalar.resolvers.base import Scalar
@@ -36,18 +37,18 @@ class Ray(Resolver[RayValue]):
     """The resolved value type — a :class:`RayValue` half-line."""
 
     @classmethod
-    def through(cls, origin: Point3, direction: Direction3) -> Ray:
+    def through(cls, origin: Point3 | SupportsPoint3, direction: Direction3) -> Ray:
         """The ray from ``origin`` extending along ``direction``."""
         from fungeom.primitives.ray.resolvers.through import RayThrough
 
-        return RayThrough(anchor=origin, axis=direction)
+        return RayThrough(anchor=_as_point3(origin), axis=direction)
 
     @classmethod
-    def from_to(cls, origin: Point3, target: Point3) -> Ray:
+    def from_to(cls, origin: Point3 | SupportsPoint3, target: Point3 | SupportsPoint3) -> Ray:
         """The ray from ``origin`` aimed at ``target`` (Unresolvable if they coincide)."""
         from fungeom.primitives.ray.resolvers.from_to import RayFromTo
 
-        return RayFromTo(source=origin, target=target)
+        return RayFromTo(source=_as_point3(origin), target=_as_point3(target))
 
     def origin(self) -> Point3:
         """The ray's start point (→ ``Point3``)."""
@@ -61,21 +62,21 @@ class Ray(Resolver[RayValue]):
 
         return RayDirection(ray=self)
 
-    def project(self, point: Point3) -> Point3:
+    def project(self, point: Point3 | SupportsPoint3) -> Point3:
         """The closest point of the ray to ``point`` (the origin if it is behind → ``Point3``)."""
         from fungeom.primitives.ray.resolvers.project import RayProject
 
-        return RayProject(ray=self, point=point)
+        return RayProject(ray=self, point=_as_point3(point))
 
-    def distance_to(self, point: Point3) -> Scalar:
+    def distance_to(self, point: Point3 | SupportsPoint3) -> Scalar:
         """The distance from ``point`` to the ray (→ ``Scalar``; to the origin if behind)."""
         from fungeom.primitives.ray.resolvers.distance_to import RayDistanceTo
 
-        return RayDistanceTo(ray=self, point=point)
+        return RayDistanceTo(ray=self, point=_as_point3(point))
 
-    def contains(self, point: Point3, tolerance: float = 1e-9) -> Bool:
+    def contains(self, point: Point3 | SupportsPoint3, tolerance: float = 1e-9) -> Bool:
         """Whether ``point`` lies on the ray within ``tolerance`` (→ ``Bool``)."""
-        return self.distance_to(point).le(tolerance)
+        return self.distance_to(_as_point3(point)).le(tolerance)
 
     def point_at(self, distance: float) -> Point3:
         """The point ``distance`` along the ray from the origin (Unresolvable if negative → ``Point3``)."""

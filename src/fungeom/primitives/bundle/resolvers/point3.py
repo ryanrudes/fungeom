@@ -38,6 +38,7 @@ from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.line.resolvers.base import Line
 from fungeom.primitives.plane.resolvers.base import Plane
 from fungeom.primitives.point2.value import Point2Value
+from fungeom.primitives.point3.coercion import SupportsPoint3, _as_point3, _as_point3s
 from fungeom.primitives.point3.decidability import Point3Decision
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
@@ -69,13 +70,13 @@ class Point3Bundle(Bundle[Point3Value]):
     """The resolved value type — a keyed collection of world-anchored positions."""
 
     @classmethod
-    def of(cls, points: Sequence[Point3], keys: Sequence[Hashable] | None = None) -> Point3Bundle:
+    def of(cls, points: Sequence[Point3 | SupportsPoint3], keys: Sequence[Hashable] | None = None) -> Point3Bundle:
         """A cloud from ``points``, keyed by ``keys`` (or by position ``0..N-1``).
 
         Every point is present. Unresolvable to build if ``keys`` is given with a
         different length, if keys are duplicated, or if any point is.
         """
-        members = tuple(points)
+        members = tuple(_as_point3s(points))
         member_keys = tuple(keys) if keys is not None else tuple(range(len(members)))
         return _GatheredPoint3Bundle(member_keys=member_keys, members=members, roster=member_keys)
 
@@ -98,7 +99,7 @@ class Point3Bundle(Bundle[Point3Value]):
     @classmethod
     def from_map(
         cls,
-        members: Mapping[Hashable, Point3],
+        members: Mapping[Hashable, Point3 | SupportsPoint3],
         roster: Sequence[Hashable] | None = None,
     ) -> Point3Bundle:
         """A cloud from a ``{key: point}`` mapping, optionally over a larger ``roster``.
@@ -107,7 +108,7 @@ class Point3Bundle(Bundle[Point3Value]):
         (the occluded-marker case): they are in the roster but off the support.
         """
         member_keys = tuple(members)
-        points = tuple(members[key] for key in member_keys)
+        points = tuple(_as_point3(members[key]) for key in member_keys)
         full = tuple(dict.fromkeys([*roster, *member_keys])) if roster is not None else member_keys
         return _GatheredPoint3Bundle(member_keys=member_keys, members=points, roster=full)
 
@@ -199,15 +200,16 @@ class Point3Bundle(Bundle[Point3Value]):
         """Apply ``func`` to each present member (→ ``Vec3Bundle``)."""
         return _MappedVec3Bundle(source=self, func=func)
 
-    def distances_to(self, point: Point3) -> ScalarBundle:
+    def distances_to(self, point: Point3 | SupportsPoint3) -> ScalarBundle:
         """Each present member's distance to one ``point`` (a one-query broadcast → ``ScalarBundle``)."""
+        point = _as_point3(point)
         return self.map_scalar(lambda member: member.distance_to(point))
 
-    def closest_point_to(self, point: Point3) -> Point3:
+    def closest_point_to(self, point: Point3 | SupportsPoint3) -> Point3:
         """The present member nearest ``point`` (→ ``Point3``); Unresolvable over an empty cloud."""
-        return _ClosestPointInBundle(cloud=self, query=point)
+        return _ClosestPointInBundle(cloud=self, query=_as_point3(point))
 
-    def nearest_to(self, point: Point3) -> Roster:
+    def nearest_to(self, point: Point3 | SupportsPoint3) -> Roster:
         """The key of the present member nearest ``point``, as a singleton :class:`Roster`.
 
         Composes :meth:`distances_to` with :meth:`ScalarBundle.argmin`; resolver-shaped (empty →

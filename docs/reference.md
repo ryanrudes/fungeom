@@ -249,6 +249,33 @@ referenced, so a mistyped reference is a `NameError`, never a silent string key.
 `Scalar`/`Vec3`/`Transform` is a small addition when one is needed. See
 [`docs/free-variables.md`](free-variables.md) for the design and the retarget motivation.
 
+## Point coercion (`SupportsPoint3`)
+
+Anywhere fungeom accepts a `Point3`, it also accepts any object that knows how to *produce* one
+— anything implementing the structural protocol `SupportsPoint3` (one method
+`__fungeom_point3__(self) -> Point3`). fungeom stays ignorant of the consumer: a marker symbol
+that carries a rest position implements the dunder once and is then passed **directly** where a
+point is expected, dropping the `.rest` noise.
+
+```python
+from fungeom import Point3, Point3Bundle
+
+class Marker:                                   # a consumer's symbol (e.g. a retarget marker)
+    def __fungeom_point3__(self) -> Point3:
+        return self.rest                         # == Point3.free(self)
+
+heel, toe, mid, grid = Marker(), Marker(), Marker(), Marker()
+Point3Bundle.of([heel, toe, mid]).fit_plane().facing(grid)    # markers, not heel.rest
+```
+
+The widening is on the **input** only — never the resolution. A single `_as_point3` coerces at
+every point boundary (`Point3Bundle.of`, `Plane.through`, `a.midpoint(b)`, `Segment.between`,
+`cloud.nearest_to(p)`, …); a real `Point3` is the fast path (returned unchanged), and a marker
+that yields a `Point3.free` leaf stays honestly `Unresolvable` until `bind`. So the coercion is
+referentially transparent and partiality-preserving — exactly the substrate's
+[membership rule](substrate-membership.md). `SupportsPoint3` is public for consumers to implement
+(structurally — no subclassing or import to conform), and the coercion is `Point3`-only by design.
+
 ## Examples
 
 Runnable, commented scripts live in [`examples/`](examples/) (each is exercised

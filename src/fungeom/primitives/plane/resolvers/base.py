@@ -19,6 +19,7 @@ from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.direction3.resolvers.base import Direction3
 from fungeom.primitives.line.resolvers.base import Line
 from fungeom.primitives.plane.value import PlaneValue
+from fungeom.primitives.point3.coercion import SupportsPoint3, _as_point3, _as_point3s
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.transform.resolvers.base import Transform
@@ -51,28 +52,30 @@ class Plane(Resolver[PlaneValue]):
     """The resolved value type — an oriented :class:`PlaneValue`."""
 
     @classmethod
-    def through(cls, point: Point3, normal: Direction3) -> Plane:
+    def through(cls, point: Point3 | SupportsPoint3, normal: Direction3) -> Plane:
         """The plane through ``point`` with the given ``normal``."""
         from fungeom.primitives.plane.resolvers.through import PlaneThrough
 
-        return PlaneThrough(anchor=point, axis=normal)
+        return PlaneThrough(anchor=_as_point3(point), axis=normal)
 
     @classmethod
-    def through_points(cls, a: Point3, b: Point3, c: Point3) -> Plane:
+    def through_points(
+        cls, a: Point3 | SupportsPoint3, b: Point3 | SupportsPoint3, c: Point3 | SupportsPoint3
+    ) -> Plane:
         """The plane through three points (Unresolvable if they are collinear).
 
         The normal follows the right-hand rule on ``(b - a) × (c - a)``.
         """
         from fungeom.primitives.plane.resolvers.through_points import PlaneThroughPoints
 
-        return PlaneThroughPoints(a=a, b=b, c=c)
+        return PlaneThroughPoints(a=_as_point3(a), b=_as_point3(b), c=_as_point3(c))
 
     @classmethod
-    def spanned_by(cls, point: Point3, u: Vec3, v: Vec3) -> Plane:
+    def spanned_by(cls, point: Point3 | SupportsPoint3, u: Vec3, v: Vec3) -> Plane:
         """The plane through ``point`` spanned by ``u`` and ``v`` (Unresolvable if parallel)."""
         from fungeom.primitives.plane.resolvers.spanned_by import PlaneSpannedBy
 
-        return PlaneSpannedBy(anchor=point, u=u, v=v)
+        return PlaneSpannedBy(anchor=_as_point3(point), u=u, v=v)
 
     def normal(self) -> Direction3:
         """This plane's unit outward normal (→ ``Direction3``)."""
@@ -87,10 +90,10 @@ class Plane(Resolver[PlaneValue]):
         return PlaneOrigin(plane=self)
 
     @overload
-    def project(self, point: Point3) -> Point3: ...
+    def project(self, point: Point3 | SupportsPoint3) -> Point3: ...
     @overload
     def project(self, point: Point3Bundle) -> Point3Bundle: ...
-    def project(self, point: Point3 | Point3Bundle) -> Point3 | Point3Bundle:
+    def project(self, point: Point3 | SupportsPoint3 | Point3Bundle) -> Point3 | Point3Bundle:
         """The orthogonal projection of ``point`` onto this plane (→ ``Point3``).
 
         Broadcasts over a ``Point3Bundle`` (→ ``Point3Bundle``, per-key, occlusion-aware).
@@ -101,15 +104,16 @@ class Plane(Resolver[PlaneValue]):
             from fungeom.primitives.bundle.resolvers.plane_ops import PlaneProjectBundle
 
             return PlaneProjectBundle(plane=self, cloud=point)
+        point = _as_point3(point)
         from fungeom.primitives.plane.resolvers.project import PlaneProject
 
         return PlaneProject(plane=self, point=point)
 
     @overload
-    def signed_distance(self, point: Point3) -> Scalar: ...
+    def signed_distance(self, point: Point3 | SupportsPoint3) -> Scalar: ...
     @overload
     def signed_distance(self, point: Point3Bundle) -> ScalarBundle: ...
-    def signed_distance(self, point: Point3 | Point3Bundle) -> Scalar | ScalarBundle:
+    def signed_distance(self, point: Point3 | SupportsPoint3 | Point3Bundle) -> Scalar | ScalarBundle:
         """The signed distance from ``point`` to the plane (positive on the normal side).
 
         Broadcasts over a ``Point3Bundle`` (→ ``ScalarBundle``) — the per-marker height field used
@@ -121,19 +125,20 @@ class Plane(Resolver[PlaneValue]):
             from fungeom.primitives.bundle.resolvers.plane_ops import PlaneSignedDistanceBundle
 
             return PlaneSignedDistanceBundle(plane=self, cloud=point)
+        point = _as_point3(point)
         from fungeom.primitives.plane.resolvers.signed_distance import PlaneSignedDistance
 
         return PlaneSignedDistance(plane=self, point=point)
 
-    def distance_to(self, point: Point3) -> Scalar:
+    def distance_to(self, point: Point3 | SupportsPoint3) -> Scalar:
         """The unsigned distance from ``point`` to the plane (``|signed_distance|``)."""
-        return abs(self.signed_distance(point))
+        return abs(self.signed_distance(_as_point3(point)))
 
     @overload
-    def contains(self, point: Point3, tolerance: float = ...) -> Bool: ...
+    def contains(self, point: Point3 | SupportsPoint3, tolerance: float = ...) -> Bool: ...
     @overload
     def contains(self, point: Point3Bundle, tolerance: float = ...) -> BoolBundle: ...
-    def contains(self, point: Point3 | Point3Bundle, tolerance: float = 1e-9) -> Bool | BoolBundle:
+    def contains(self, point: Point3 | SupportsPoint3 | Point3Bundle, tolerance: float = 1e-9) -> Bool | BoolBundle:
         """Whether ``point`` lies on the plane within ``tolerance`` (→ ``Bool``).
 
         Broadcasts over a ``Point3Bundle`` (→ ``BoolBundle``, per-key).
@@ -144,13 +149,14 @@ class Plane(Resolver[PlaneValue]):
             from fungeom.primitives.bundle.resolvers.plane_ops import PlaneContainsBundle
 
             return PlaneContainsBundle(plane=self, cloud=point, tolerance=tolerance)
+        point = _as_point3(point)
         return abs(self.signed_distance(point)).le(tolerance)
 
-    def facing(self, point: Point3) -> Plane:
+    def facing(self, point: Point3 | SupportsPoint3) -> Plane:
         """This plane with its normal oriented toward ``point`` (Unresolvable if on the plane)."""
         from fungeom.primitives.plane.resolvers.facing import PlaneFacing
 
-        return PlaneFacing(plane=self, point=point)
+        return PlaneFacing(plane=self, point=_as_point3(point))
 
     def flipped(self) -> Plane:
         """This plane with the opposite normal."""
@@ -177,7 +183,7 @@ class Plane(Resolver[PlaneValue]):
 
         return PlaneProjectDirection(plane=self, direction=direction)
 
-    def frame(self, origin: Point3, tangent: Direction3) -> Transform:
+    def frame(self, origin: Point3 | SupportsPoint3, tangent: Direction3) -> Transform:
         """A surface coordinate frame at ``origin`` (→ ``Transform``): ``z`` = normal, ``x`` = in-plane ``tangent``.
 
         The canonical right-handed frame placing the patch in the world: the plane's
@@ -188,9 +194,9 @@ class Plane(Resolver[PlaneValue]):
         """
         from fungeom.primitives.plane.resolvers.frame import PlaneFrame
 
-        return PlaneFrame(plane=self, origin=origin, tangent=tangent)
+        return PlaneFrame(plane=self, origin=_as_point3(origin), tangent=tangent)
 
-    def to_local(self, point: Point3) -> "Point2":
+    def to_local(self, point: Point3 | SupportsPoint3) -> "Point2":
         """``point``'s coordinates in the plane's intrinsic 2D chart (→ ``Point2``).
 
         The 3D→2D bridge: ``point`` is orthogonally projected onto the plane and expressed
@@ -201,7 +207,7 @@ class Plane(Resolver[PlaneValue]):
         """
         from fungeom.primitives.plane.resolvers.to_local import PlaneToLocal
 
-        return PlaneToLocal(plane=self, point=point)
+        return PlaneToLocal(plane=self, point=_as_point3(point))
 
     def embed(self, local: "Point2") -> Point3:
         """The world point at chart coordinates ``local`` on this plane (→ ``Point3``).
@@ -214,7 +220,7 @@ class Plane(Resolver[PlaneValue]):
 
         return PlaneEmbed(plane=self, local=local)
 
-    def winding_normal(self, points: Sequence[Point3], tolerance: float = 1e-9) -> Direction3:
+    def winding_normal(self, points: Sequence[Point3 | SupportsPoint3], tolerance: float = 1e-9) -> Direction3:
         """The normal whose side ``points`` wind counter-clockwise around (→ ``Direction3``).
 
         The points are projected onto the plane and read as an ordered polygon; the
@@ -226,7 +232,7 @@ class Plane(Resolver[PlaneValue]):
         """
         from fungeom.primitives.plane.resolvers.winding_normal import PlaneWindingNormal
 
-        return PlaneWindingNormal(plane=self, points=tuple(points), tolerance=tolerance)
+        return PlaneWindingNormal(plane=self, points=tuple(_as_point3s(points)), tolerance=tolerance)
 
     def intersect(self, other: Plane) -> Line:
         """The line where this plane meets ``other`` (→ ``Line``; Unresolvable if parallel)."""

@@ -85,6 +85,14 @@ everything downstream is identical to the callable form. A throwaway spike in th
 to the callable one through retarget's real pipeline; this is the native fungeom capability
 that replaces the spike's stand-in.
 
+**Authoring sugar — pass markers directly.** A marker *is* a free leaf, so authoring a patch
+would mean writing `Point3.free(marker)` (or `marker.rest`) at every point. The `SupportsPoint3`
+coercion removes that ceremony: a marker implementing `__fungeom_point3__(self) -> Point3`
+(returning its `.rest`, `== Point3.free(self)`) is accepted **anywhere a `Point3` is** —
+`Point3Bundle.of([heel, toe])`, `plane.facing(toe_grid)` — so the construction reads in the
+consumer's own symbols with no `.rest` / `Point3.free` noise. The widening is input-only and
+partiality-preserving; details in [`reference.md`](reference.md#point-coercion-supportspoint3).
+
 ## Scope and generality
 
 Only `Point3.free` exists today — the single need the motivating use has. The binding
