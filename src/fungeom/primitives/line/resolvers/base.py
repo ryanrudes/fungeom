@@ -17,6 +17,7 @@ from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.direction3.resolvers.base import Direction3
 from fungeom.primitives.line.value import LineValue
+from fungeom.primitives.point3.coercion import SupportsPoint3, _as_point3, _as_point3s
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.scalar.resolvers.base import Scalar
 
@@ -38,18 +39,18 @@ class Line(Resolver[LineValue]):
     """The resolved value type — an oriented :class:`LineValue`."""
 
     @classmethod
-    def through(cls, point: Point3, direction: Direction3) -> Line:
+    def through(cls, point: Point3 | SupportsPoint3, direction: Direction3) -> Line:
         """The line through ``point`` along ``direction``."""
         from fungeom.primitives.line.resolvers.through import LineThrough
 
-        return LineThrough(anchor=point, axis=direction)
+        return LineThrough(anchor=_as_point3(point), axis=direction)
 
     @classmethod
-    def through_points(cls, a: Point3, b: Point3) -> Line:
+    def through_points(cls, a: Point3 | SupportsPoint3, b: Point3 | SupportsPoint3) -> Line:
         """The line through two points, directed ``a → b`` (Unresolvable if coincident)."""
         from fungeom.primitives.line.resolvers.through_points import LineThroughPoints
 
-        return LineThroughPoints(a=a, b=b)
+        return LineThroughPoints(a=_as_point3(a), b=_as_point3(b))
 
     def direction(self) -> Direction3:
         """This line's unit direction (→ ``Direction3``)."""
@@ -63,23 +64,23 @@ class Line(Resolver[LineValue]):
 
         return LineOrigin(line=self)
 
-    def project(self, point: Point3) -> Point3:
+    def project(self, point: Point3 | SupportsPoint3) -> Point3:
         """The orthogonal projection of ``point`` onto this line (→ ``Point3``)."""
         from fungeom.primitives.line.resolvers.project import LineProject
 
-        return LineProject(line=self, point=point)
+        return LineProject(line=self, point=_as_point3(point))
 
-    def distance_to(self, point: Point3) -> Scalar:
+    def distance_to(self, point: Point3 | SupportsPoint3) -> Scalar:
         """The perpendicular distance from ``point`` to the line (→ ``Scalar``)."""
         from fungeom.primitives.line.resolvers.distance_to import LineDistanceTo
 
-        return LineDistanceTo(line=self, point=point)
+        return LineDistanceTo(line=self, point=_as_point3(point))
 
-    def contains(self, point: Point3, tolerance: float = 1e-9) -> Bool:
+    def contains(self, point: Point3 | SupportsPoint3, tolerance: float = 1e-9) -> Bool:
         """Whether ``point`` lies on the line within ``tolerance`` (→ ``Bool``)."""
-        return self.distance_to(point).le(tolerance)
+        return self.distance_to(_as_point3(point)).le(tolerance)
 
-    def direction_along(self, points: Sequence[Point3]) -> Direction3:
+    def direction_along(self, points: Sequence[Point3 | SupportsPoint3]) -> Direction3:
         """This line's direction, oriented to agree with ``points`` taken in order (→ ``Direction3``).
 
         The line-fit tangent's *orientation*: the points are projected onto the line and
@@ -90,7 +91,7 @@ class Line(Resolver[LineValue]):
         """
         from fungeom.primitives.line.resolvers.direction_along import LineDirectionAlong
 
-        return LineDirectionAlong(line=self, points=tuple(points))
+        return LineDirectionAlong(line=self, points=tuple(_as_point3s(points)))
 
     def point_at(self, distance: float) -> Point3:
         """The point at signed arc-length ``distance`` from the origin along the direction (→ ``Point3``)."""

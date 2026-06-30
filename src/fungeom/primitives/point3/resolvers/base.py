@@ -15,6 +15,7 @@ from fungeom.primitives.direction3.resolvers.base import Direction3
 from fungeom.primitives.frame.resolvers.base import Frame
 from fungeom.primitives.frame.value import WORLD_FRAME, CoordinateFrame
 from fungeom.primitives.scalar.resolvers.base import Scalar
+from fungeom.primitives.point3.coercion import SupportsPoint3, _as_point3, _as_point3s
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.transform.resolvers.base import Transform
 from fungeom.primitives.vec3.resolvers.base import Vec3
@@ -77,18 +78,18 @@ class Point3(Resolver[Point3Value]):
         return FramedPoint3(local=local, frame=as_frame(frame))
 
     @classmethod
-    def centroid(cls, points: Iterable[Point3]) -> Point3:
+    def centroid(cls, points: Iterable[Point3 | SupportsPoint3]) -> Point3:
         """The centroid of ``points`` (Unresolvable if there are none)."""
         from fungeom.primitives.point3.resolvers.centroid import Centroid3
 
-        return Centroid3(points=tuple(points))
+        return Centroid3(points=tuple(_as_point3s(points)))
 
     @classmethod
-    def affine(cls, points: Sequence[Point3], weights: Sequence[float | Scalar]) -> Point3:
+    def affine(cls, points: Sequence[Point3 | SupportsPoint3], weights: Sequence[float | Scalar]) -> Point3:
         """A weighted combination of ``points`` (Unresolvable if weights total zero)."""
         from fungeom.primitives.point3.resolvers.affine import affine_combination
 
-        return affine_combination(points, weights)
+        return affine_combination(_as_point3s(points), weights)
 
     @classmethod
     def free(cls, identity: Hashable) -> Point3:
@@ -113,28 +114,28 @@ class Point3(Resolver[Point3Value]):
         resolver = offset if isinstance(offset, Vec3) else vec3_resolver(as_vec3(offset))
         return TranslatedPoint3(point=self, offset=resolver)
 
-    def lerp(self, other: Point3, t: float | Scalar) -> Point3:
+    def lerp(self, other: Point3 | SupportsPoint3, t: float | Scalar) -> Point3:
         """Linearly interpolate toward ``other`` (``t=0`` here, ``t=1`` there)."""
         from fungeom.primitives.point3.resolvers.lerp import Lerp3
         from fungeom.primitives.scalar.resolvers.literal import as_scalar_resolver
 
-        return Lerp3(a=self, b=other, t=as_scalar_resolver(t))
+        return Lerp3(a=self, b=_as_point3(other), t=as_scalar_resolver(t))
 
-    def midpoint(self, other: Point3) -> Point3:
+    def midpoint(self, other: Point3 | SupportsPoint3) -> Point3:
         """The point halfway between this point and ``other``."""
         return self.lerp(other, 0.5)
 
-    def displacement_to(self, other: Point3) -> Vec3:
+    def displacement_to(self, other: Point3 | SupportsPoint3) -> Vec3:
         """The world-frame vector from this point to ``other``."""
         from fungeom.primitives.point3.resolvers.displacement import DisplacementVec3
 
-        return DisplacementVec3(start=self, end=other)
+        return DisplacementVec3(start=self, end=_as_point3(other))
 
-    def distance_to(self, other: Point3) -> Scalar:
+    def distance_to(self, other: Point3 | SupportsPoint3) -> Scalar:
         """The distance to ``other``, as a deferred scalar (norm of the displacement)."""
         return self.displacement_to(other).norm()
 
-    def direction_to(self, other: Point3) -> Direction3:
+    def direction_to(self, other: Point3 | SupportsPoint3) -> Direction3:
         """The unit direction toward ``other`` (Unresolvable if the points coincide)."""
         from fungeom.primitives.direction3.resolvers.normalized import as_direction
 
@@ -146,11 +147,11 @@ class Point3(Resolver[Point3Value]):
 
         return TransformedPoint3(point=self, transform=transform)
 
-    def reflect_across(self, center: Point3) -> Point3:
+    def reflect_across(self, center: Point3 | SupportsPoint3) -> Point3:
         """This point reflected through ``center`` (central symmetry: ``2·center − self``)."""
         from fungeom.primitives.point3.resolvers.reflected import ReflectedPoint3
 
-        return ReflectedPoint3(point=self, center=center)
+        return ReflectedPoint3(point=self, center=_as_point3(center))
 
     def coordinates_in(self, frame: CoordinateFrame | Frame) -> Vec3:
         """This point's coordinates expressed in ``frame`` (→ ``Vec3``) — the inverse of :meth:`in_frame`.

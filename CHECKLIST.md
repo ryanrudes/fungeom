@@ -133,6 +133,7 @@ application/numerics depth) and the two open foundational items (a `Bool`/
 | `Resolver` (`decide`/`resolve`/`is_resolvable`/`children`) | ✅ | ✅ | ✅ | `core/test_resolver.py` |
 | `decide()` memoization | ✅ | ✅ | ✅ | `core/test_resolver.py` |
 | free variables: `bind` / `resolve_in` / `decide_in` / `free_variables` (structural substitution; `decide`/`resolve` left unchanged) | ✅ | ✅ | ✅ | `core/test_substitution.py`, `cross_cutting/test_free_variables.py` |
+| point coercion: `SupportsPoint3` (`__fungeom_point3__`) + `_as_point3` / `_as_point3s` — every public `Point3` boundary also accepts a producer (`Point3`-only by design; input-widening, partiality-preserving) | ✅ | ✅ | ✅ | `cross_cutting/test_point3_coercion.py` |
 | `Resolvable` / `Unresolvable` / `UnresolvableError` | ✅ | ✅ | ✅ | `core/test_resolvability.py` |
 | `gather` (incl. empty) | ✅ | ✅ | ✅ | `core/test_resolvability.py` |
 | `core.arrays` (`freeze`, `ArrayLike`) | ✅ | ✅ | ✅ | `core/test_arrays.py` |

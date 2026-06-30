@@ -15,6 +15,7 @@ from fungeom.core.resolver import Resolver
 from fungeom.primitives.boolean.resolvers.base import Bool
 from fungeom.primitives.face.value import FaceValue
 from fungeom.primitives.plane.resolvers.base import Plane
+from fungeom.primitives.point3.coercion import SupportsPoint3, _as_point3
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.region2.resolvers.base import Region2
 from fungeom.primitives.scalar.resolvers.base import Scalar
@@ -59,20 +60,20 @@ class Face(Resolver[FaceValue]):
 
         return FaceRegion(face=self)
 
-    def closest_point(self, point: Point3) -> Point3:
+    def closest_point(self, point: Point3 | SupportsPoint3) -> Point3:
         """The point of the bounded patch nearest ``point`` (→ ``Point3``; clamped into the region).
 
         Unresolvable when the region is empty (the patch has no surface).
         """
         from fungeom.primitives.face.resolvers.closest_point import FaceClosestPoint
 
-        return FaceClosestPoint(face=self, point=point)
+        return FaceClosestPoint(face=self, point=_as_point3(point))
 
     @overload
-    def clearance(self, point: Point3) -> Scalar: ...
+    def clearance(self, point: Point3 | SupportsPoint3) -> Scalar: ...
     @overload
     def clearance(self, point: Point3Bundle) -> ScalarBundle: ...
-    def clearance(self, point: Point3 | Point3Bundle) -> Scalar | ScalarBundle:
+    def clearance(self, point: Point3 | SupportsPoint3 | Point3Bundle) -> Scalar | ScalarBundle:
         """The 3-D distance from ``point`` to the bounded patch (→ ``Scalar``; Unresolvable if empty).
 
         The *honest* footprint clearance: unlike ``Plane.distance_to`` (the infinite plane),
@@ -83,12 +84,13 @@ class Face(Resolver[FaceValue]):
 
         if isinstance(point, Point3Bundle):
             return point.map_scalar(lambda member: self.clearance(member))
+        point = _as_point3(point)
 
         from fungeom.primitives.face.resolvers.clearance import FaceClearance
 
         return FaceClearance(face=self, point=point)
 
-    def contains(self, point: Point3) -> Bool:
+    def contains(self, point: Point3 | SupportsPoint3) -> Bool:
         """Whether ``point`` projects into this patch's footprint (→ ``Bool``).
 
         The support-polygon membership test — is the foot / CoM *over* the patch — independent of
@@ -96,7 +98,7 @@ class Face(Resolver[FaceValue]):
         """
         from fungeom.primitives.face.resolvers.contains import FaceContains
 
-        return FaceContains(face=self, point=point)
+        return FaceContains(face=self, point=_as_point3(point))
 
     def transformed_by(self, transform: Transform) -> Face:
         """This patch moved rigidly in 3D (→ ``Face``; plane transported, footprint rotated with it).
