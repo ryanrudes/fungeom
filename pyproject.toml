@@ -1,5 +1,11 @@
 [build-system]
-requires = ["hatchling>=1.25", "hatch-vcs>=0.4"]
+# hatchling is upper-bounded for the same reason ruff is (see [project.optional-dependencies]):
+# an unpinned build backend drifts. hatchling 1.28+ emits `Metadata-Version: 2.5`, which the
+# SHA-pinned gh-action-pypi-publish in release.yml rejects with "not a valid metadata version",
+# so a release built fine and then failed at the publish step. 1.27 emits 2.4 and publishes.
+# The alternative fix is bumping that action pin to a build that understands 2.5 — do that
+# deliberately, verify it publishes, then raise this bound.
+requires = ["hatchling>=1.25,<1.28", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
