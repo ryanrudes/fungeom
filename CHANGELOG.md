@@ -7,6 +7,19 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-12
+
+### Added
+
+- **`Sampling.at_rate(rate, count, start=0.0)`** — the grid `uniform` describes, parameterized the
+  way discrete data actually arrives. A recording knows how fast it was sampled and how many samples
+  it holds; it does not know the span they cover, and deriving that span means writing `count - 1` —
+  one fewer interval than there are samples — at every call site. That off-by-one now lives in one
+  tested place. `rate` may be a deferred `Scalar` and `start` an `Instant`, so both propagate.
+  `Unresolvable` for fewer than one sample, for a rate that is not positive (zero, negative or NaN —
+  none define a spacing), and for a rate so large that `1 / rate` underflows and the grid stops
+  increasing. Concrete: `PacedSampling`.
+
 ## [0.5.0] - 2026-06-29
 
 ### Added
@@ -151,7 +164,8 @@ of resolvers where partiality is first-class (`decide()` → `Resolvable` / `Unr
 - **Regions** — `Point2Bundle`, `Region2` (general GEOS-backed boolean algebra + `offset`), `Face`.
 - Ten runnable examples, full wiki + reference docs, 100% test coverage.
 
-[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ryanrudes/fungeom/compare/v0.6.0...v0.7.0
 [0.5.0]: https://github.com/ryanrudes/fungeom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ryanrudes/fungeom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ryanrudes/fungeom/compare/v0.2.3...v0.3.0

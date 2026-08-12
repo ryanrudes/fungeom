@@ -31,7 +31,13 @@ dependencies = [
 dev = [
   "pytest>=8.2",
   "pytest-cov>=5.0",
-  "ruff>=0.6",
+  # Upper-bounded on purpose: ruff 0.16 changed import ordering and formatting, so an
+  # unpinned floor let CI install a newer linter than any developer had and fail `main`
+  # on 54 pre-existing findings in code nobody had touched. A lint rule is a style
+  # decision, and adopting a new one is a deliberate repo-wide change (`ruff check --fix`
+  # + `ruff format`, some of it needing `--unsafe-fixes`), not something a release should
+  # discover. Raise this bound when that migration is done on purpose.
+  "ruff>=0.15,<0.16",
   "mypy>=1.11",
 ]
 
