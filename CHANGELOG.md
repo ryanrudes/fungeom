@@ -7,6 +7,8 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-12
+
 ### Added
 
 - **`Sampling.at_rate(rate, count, start=0.0)`** — the grid `uniform` describes, parameterized the
@@ -162,7 +164,8 @@ of resolvers where partiality is first-class (`decide()` → `Resolvable` / `Unr
 - **Regions** — `Point2Bundle`, `Region2` (general GEOS-backed boolean algebra + `offset`), `Face`.
 - Ten runnable examples, full wiki + reference docs, 100% test coverage.
 
-[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ryanrudes/fungeom/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ryanrudes/fungeom/compare/v0.6.0...v0.7.0
 [0.5.0]: https://github.com/ryanrudes/fungeom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ryanrudes/fungeom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ryanrudes/fungeom/compare/v0.2.3...v0.3.0
