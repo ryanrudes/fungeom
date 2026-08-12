@@ -20,7 +20,7 @@ host a bundle value; the base bundle layer never imports signals).
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import overload
 
 import numpy as np
@@ -29,6 +29,7 @@ from scipy.spatial.transform import Rotation
 from fungeom.core.arrays import ArrayLike
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
+from fungeom.primitives.bundle.resolvers.base import kept_keys, narrowed, renamed
 from fungeom.primitives.bundle.resolvers.fit import fit_plane_coords, orient_plane_track
 from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
 from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
@@ -45,6 +46,8 @@ from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.resolvers.base import Point3
 from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.roster.resolvers.base import Roster
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.sampling.resolvers.base import Sampling
 from fungeom.primitives.sampling.value import TimeSeries, as_times
 from fungeom.primitives.signals.blend import Blend
@@ -168,6 +171,62 @@ def decide_distributed[V](
     return Resolvable(SampledSeries(times, values, series.interpolation, series.boundary, blend, support))
 
 
+def decide_where_over_time[V](
+    source: Signal[BundleValue[V]], keep: tuple[Hashable, ...] | Roster
+) -> Resolvability[SampledSeries[BundleValue[V]]]:
+    """Restrict every sample of a collection-over-time to ``keep`` — the temporal ``where``.
+
+    The entity axis and the time axis are independent, which is the whole reason this is a
+    narrowing rather than a rebuild: keys do not move, so the same key set applies at every
+    instant, and the time base, the reconstruction kernel and the temporal support all carry
+    through untouched. Restricting cannot open a gap — a sample whose keys are all dropped is a
+    valid *empty* collection there, not an undefined one.
+
+    ``keep`` is resolved **once**, not per sample, and an unresolvable :class:`Roster` propagates
+    rather than being forced early.
+    """
+    decided_keep = kept_keys(keep)
+    if isinstance(decided_keep, Unresolvable):
+        return decided_keep
+    match source.decide():
+        case Resolvable(series):
+            narrow = tuple(narrowed(sample, decided_keep.value) for sample in series.values)
+            return Resolvable(replace(series, values=narrow))
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def decide_relabeled_over_time[V](
+    source: Signal[BundleValue[V]], mapping: RosterMap
+) -> Resolvability[SampledSeries[BundleValue[V]]]:
+    """Re-key every sample of a collection-over-time — the temporal identity transfer.
+
+    What retargeting *is*, carried across time: a cloud keyed by source-skeleton markers becomes
+    one keyed by target-skeleton joints, at every instant, with each value carried over unchanged
+    and the occlusion mask transferring intact. A correspondence is time-invariant, so it is
+    decided once and applied to each sample.
+
+    **Unresolvable** when the correspondence collapses two declared keys onto one target — the
+    same partiality as the static ``relabel``, reported for the first sample that shows it.
+    """
+    decided_map = mapping.decide()
+    if isinstance(decided_map, Unresolvable):
+        return decided_map
+    match source.decide():
+        case Resolvable(series):
+            transferred: list[BundleValue[V]] = []
+            for sample in series.values:
+                renamed_sample = renamed(sample, decided_map.value)
+                if renamed_sample is None:
+                    return Unresolvable("relabel collapses distinct keys onto the same target")
+                transferred.append(renamed_sample)
+            return Resolvable(replace(series, values=tuple(transferred)))
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
     """A deferred point cloud over time — the trajectory of a whole marker set.
 
@@ -246,6 +305,27 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         rather than silently disagree.
         """
         return _DistributedPoint3Signal(source=self, marker=marker)
+
+    def where(self, keys: Sequence[Hashable] | Roster) -> Point3BundleSignal:
+        """The sub-cloud restricted to ``keys``, at every instant (roster and support narrow).
+
+        The entity-axis counterpart of :meth:`restrict`, which narrows *time*. A selection is a
+        set of keys and keys do not move, so one made at any instant applies at all of them —
+        which is what lets a marker subset chosen once (a foot's markers, a patch's vertices)
+        stay the same subset for the whole take. The time base and reconstruction are untouched.
+
+        ``keys`` may be an explicit sequence or a deferred :class:`~fungeom.Roster`.
+        """
+        return _WherePoint3BundleSignal(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
+
+    def relabel(self, mapping: RosterMap) -> Point3BundleSignal:
+        """Re-key the cloud through ``mapping`` at every instant — the identity transfer over time.
+
+        The temporal form of ``Point3Bundle.relabel``: a trajectory set keyed by *source*
+        entities becomes one keyed by *target* entities, unmapped keys dropping and the occlusion
+        mask carrying across. Unresolvable if the correspondence collapses two keys onto one.
+        """
+        return _RelabeledPoint3BundleSignal(source=self, mapping=mapping)
 
     def resample(self, onto: Sampling) -> Point3BundleSignal:
         """This cloud signal reconstructed onto a new time base."""
@@ -471,6 +551,28 @@ class _DistributedPoint3Signal(Point3Signal):
 
 
 @dataclass(frozen=True, eq=False)
+class _WherePoint3BundleSignal(Point3BundleSignal):
+    """The cloud signal ``source`` restricted to the ``keep`` keys at every instant."""
+
+    source: Point3BundleSignal
+    keep: tuple[Hashable, ...] | Roster
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_where_over_time(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledPoint3BundleSignal(Point3BundleSignal):
+    """The cloud signal ``source`` re-keyed through ``mapping`` at every instant."""
+
+    source: Point3BundleSignal
+    mapping: RosterMap
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_relabeled_over_time(self.source, self.mapping)
+
+
+@dataclass(frozen=True, eq=False)
 class _ResampledPoint3BundleSignal(Point3BundleSignal):
     source: Point3BundleSignal
     onto: Sampling
@@ -651,6 +753,24 @@ class TransformBundleSignal(Signal[BundleValue[RigidTransform]]):
         orientations). Unresolvable to build if ``j`` is absent from the roster or never present.
         """
         return _DistributedTransformSignal(source=self, joint=joint)
+
+    def where(self, keys: Sequence[Hashable] | Roster) -> TransformBundleSignal:
+        """The sub-set of joints restricted to ``keys``, at every instant.
+
+        The entity-axis counterpart of :meth:`restrict`. Selecting the joints that drive one limb
+        is a narrowing of the pose set, not a rebuild of it: the time base, the SE(3) blend and
+        the temporal support all carry through unchanged.
+        """
+        return _WhereTransformBundleSignal(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
+
+    def relabel(self, mapping: RosterMap) -> TransformBundleSignal:
+        """Re-key the pose set through ``mapping`` at every instant — **what retargeting is**.
+
+        A pose set keyed by *source*-skeleton joints becomes one keyed by *target*-skeleton
+        joints, each pose carried across the correspondence unchanged and every unmapped joint
+        dropped. Unresolvable if the correspondence is not injective over this roster.
+        """
+        return _RelabeledTransformBundleSignal(source=self, mapping=mapping)
 
     def resample(self, onto: Sampling) -> TransformBundleSignal:
         """This pose-set signal reconstructed onto a new time base."""
@@ -837,6 +957,28 @@ class _TransformBundleSampleAt(TransformBundle):
 
     def _decide(self) -> BundleDecision[RigidTransform]:
         return decide_sample(self.signal, self.instant)
+
+
+@dataclass(frozen=True, eq=False)
+class _WhereTransformBundleSignal(TransformBundleSignal):
+    """The pose signal ``source`` restricted to the ``keep`` joints at every instant."""
+
+    source: TransformBundleSignal
+    keep: tuple[Hashable, ...] | Roster
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        return decide_where_over_time(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledTransformBundleSignal(TransformBundleSignal):
+    """The pose signal ``source`` re-keyed through ``mapping`` at every instant."""
+
+    source: TransformBundleSignal
+    mapping: RosterMap
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        return decide_relabeled_over_time(self.source, self.mapping)
 
 
 @dataclass(frozen=True, eq=False)

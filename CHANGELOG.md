@@ -7,6 +7,27 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`where(keys | Roster)` and `relabel(RosterMap)` on `Point3BundleSignal` and
+  `TransformBundleSignal`** — the entity-axis ops the static bundles already had, lifted over time.
+  Their absence was an asymmetry with teeth: a *selection* (a marker subset, a patch's vertices, one
+  limb's joints) dropped out of its signal the moment you narrowed it, taking `fit_plane`,
+  `resolve_over` and `FaceSignal` with it, so the only route was to slice the raw array before
+  building the signal and give up composing afterwards.
+
+  `where` is the entity-axis counterpart of `restrict`, which narrows *time*: entity and time are
+  independent axes, so this is a narrowing rather than a rebuild — the time base, the reconstruction
+  kernel and the temporal support all carry through untouched, and narrowing to nothing yields a
+  valid *empty* collection rather than opening a gap. `keep` is decided **once**, not per sample, and
+  a deferred `Roster` propagates. `relabel` carries a whole pose set from source-skeleton to
+  target-skeleton keys at every instant — what retargeting *is* — dropping unmapped keys, carrying
+  the occlusion mask across, and `Unresolvable` when the correspondence collapses two keys onto one.
+
+  The value-level `narrowed` / `renamed` were factored out of `decide_where` / `decide_relabeled` and
+  are shared with the new `decide_where_over_time` / `decide_relabeled_over_time`, so the static and
+  temporal forms cannot drift apart. Concretes: `_Where…BundleSignal`, `_Relabeled…BundleSignal`.
+
 ## [0.7.0] - 2026-08-12
 
 ### Added

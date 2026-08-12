@@ -707,6 +707,10 @@ CASES: dict[str, Callable[[], object]] = {
     "pbsignal.transformed_by.pose": lambda: GOOD_PBS.transformed_by(BAD_TSIG),
     "pbsignal.transformed_by_bundle.signal": lambda: BAD_PBS.transformed_by(GOOD_TBS),
     "pbsignal.transformed_by_bundle.poses": lambda: GOOD_PBS.transformed_by(BAD_TBS),
+    "pbsignal.where.source": lambda: BAD_PBS.where([0]),
+    "pbsignal.where.keys": lambda: GOOD_PBS.where(BAD_ROSTER),
+    "pbsignal.relabel.source": lambda: BAD_PBS.relabel(GOOD_RMAP),
+    "pbsignal.relabel.mapping": lambda: GOOD_PBS.relabel(BAD_RMAP),
     "pbsignal.fit_plane": lambda: BAD_PBS.fit_plane(),
     "pbsignal.centroid": lambda: BAD_PBS.centroid(),
     # plane signal (T8 — moving patch surface)
@@ -1008,6 +1012,10 @@ CASES: dict[str, Callable[[], object]] = {
     "tbsignal.restrict.to": lambda: GOOD_TBS.restrict(BAD_INT),
     "tbsignal.shift.source": lambda: BAD_TBS.shift(GOOD_DUR),
     "tbsignal.shift.by": lambda: GOOD_TBS.shift(BAD_DUR),
+    "tbsignal.where.source": lambda: BAD_TBS.where([0]),
+    "tbsignal.where.keys": lambda: GOOD_TBS.where(BAD_ROSTER),
+    "tbsignal.relabel.source": lambda: BAD_TBS.relabel(GOOD_RMAP),
+    "tbsignal.relabel.mapping": lambda: GOOD_TBS.relabel(BAD_RMAP),
     "tbsignal.key": lambda: BAD_TBS.key(0),
 }
 

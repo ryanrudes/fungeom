@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 
 from fungeom import (
+    RosterMap,
+    Roster,
     Boundary,
     CoordinateFrame,
     Instant,
@@ -316,3 +318,63 @@ def test_centroid_is_the_cloud_centre_track() -> None:
         [0.0, 1.0], [[[0, 0, 0]], [[1, 0, 0]]], keys=["a"], present=[[False], [True]]
     )
     assert isinstance(occluded.centroid().decide(), Unresolvable)
+
+
+def test_where_narrows_the_entity_axis_at_every_instant() -> None:
+    """A selection is a set of keys, and keys do not move — so one choice holds for all time."""
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0],
+        [[[0, 0, 0], [1, 0, 0], [2, 0, 0]], [[0, 1, 0], [1, 1, 0], [2, 1, 0]]],
+        keys=["heel", "toe", "hand"],
+    )
+    foot = cloud.where(["heel", "toe"])
+    assert sorted(foot.at(0.0).resolve().roster) == ["heel", "toe"]
+    assert sorted(foot.at(1.0).resolve().roster) == ["heel", "toe"]
+    # the values that survive are untouched, and the time base is unchanged
+    assert foot.at(1.0).at("toe").resolve().coord.tolist() == cloud.at(1.0).at("toe").resolve().coord.tolist()
+    assert foot.over().resolve() == cloud.over().resolve()
+
+
+def test_where_accepts_a_deferred_roster() -> None:
+    cloud = Point3BundleSignal.from_frames([0.0, 1.0], [[[0, 0, 0], [5, 0, 0]], [[0, 1, 0], [5, 1, 0]]])
+    assert sorted(cloud.where(Roster.of([1])).at(0.0).resolve().roster) == [1]
+
+
+def test_where_keeps_a_dropped_out_key_absent_rather_than_inventing_it() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0],
+        [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]],
+        present=[[True, False], [True, True]],
+        keys=["a", "b"],
+    )
+    kept = cloud.where(["b"])
+    assert kept.at(0.0).resolve().roster == ("b",)
+    assert not kept.at(0.0).present("b").resolve(), "occlusion survives the narrowing"
+    assert kept.at(1.0).present("b").resolve()
+
+
+def test_where_a_key_the_cloud_never_had_yields_an_empty_but_valid_cloud() -> None:
+    """Narrowing cannot open a *temporal* gap: an empty cloud is defined, not undefined."""
+    cloud = Point3BundleSignal.from_frames([0.0, 1.0], [[[0, 0, 0]], [[0, 1, 0]]], keys=["a"])
+    empty = cloud.where(["nobody"])
+    assert empty.is_resolvable
+    assert empty.at(0.0).resolve().roster == ()
+
+
+def test_relabel_carries_the_cloud_across_a_correspondence() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0], [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]], keys=["src_heel", "src_toe"]
+    )
+    moved = cloud.relabel(RosterMap.of({"src_heel": "HEEL", "src_toe": "TOE"}))
+    assert sorted(moved.at(1.0).resolve().roster) == ["HEEL", "TOE"]
+    assert moved.at(1.0).at("TOE").resolve().coord.tolist() == cloud.at(1.0).at("src_toe").resolve().coord.tolist()
+
+
+def test_relabel_drops_unmapped_keys_and_refuses_to_collapse_two() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0], [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]], keys=["a", "b"]
+    )
+    assert sorted(cloud.relabel(RosterMap.of({"a": "A"})).at(0.0).resolve().roster) == ["A"]
+    collapsed = cloud.relabel(RosterMap.of({"a": "X", "b": "X"})).decide()
+    assert isinstance(collapsed, Unresolvable)
+    assert "collapses" in collapsed.reason

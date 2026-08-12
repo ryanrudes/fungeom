@@ -7,6 +7,8 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from fungeom import (
+    RosterMap,
+    Roster,
     Instant,
     Interpolation,
     Interval,
@@ -247,3 +249,33 @@ def test_pose_set_resolve_over_reads_back_a_dense_matrix_stack() -> None:
     assert mask.tolist() == [[True, True, True], [True, False, True]]
     assert np.isnan(values[1, 1]).all()  # occluded pose → nan with a False mask
     assert np.allclose(values[0, 0], mats[0, 0])  # present poses read back exactly
+
+
+def test_where_narrows_the_pose_set_at_every_instant() -> None:
+    poses = TransformBundleSignal.from_matrices(
+        [0.0, 1.0], np.tile(np.eye(4), (2, 3, 1, 1)), keys=["hip", "knee", "foot"]
+    )
+    leg = poses.where(["knee", "foot"])
+    assert sorted(leg.at(0.0).resolve().roster) == ["foot", "knee"]
+    read_back, _present = leg.resolve_over(Sampling.at_times([0.0, 1.0]))
+    assert read_back.shape == (2, 2, 4, 4), "the readback narrows with the roster"
+
+
+def test_where_accepts_a_deferred_roster_of_joints() -> None:
+    poses = TransformBundleSignal.from_matrices([0.0, 1.0], np.tile(np.eye(4), (2, 2, 1, 1)))
+    assert sorted(poses.where(Roster.of([1])).at(0.0).resolve().roster) == [1]
+
+
+def test_relabel_is_what_retargeting_is() -> None:
+    """A pose set keyed by source-skeleton joints becomes one keyed by target-skeleton joints."""
+    poses = TransformBundleSignal.from_matrices([0.0, 1.0], np.tile(np.eye(4), (2, 2, 1, 1)), keys=["A_hip", "A_knee"])
+    retargeted = poses.relabel(RosterMap.of({"A_hip": "B_pelvis", "A_knee": "B_knee"}))
+    assert sorted(retargeted.at(0.0).resolve().roster) == ["B_knee", "B_pelvis"]
+    assert retargeted.at(0.0).at("B_pelvis").resolve().matrix.shape == (4, 4)
+
+
+def test_relabel_refuses_a_correspondence_that_collapses_joints() -> None:
+    poses = TransformBundleSignal.from_matrices([0.0, 1.0], np.tile(np.eye(4), (2, 2, 1, 1)), keys=["a", "b"])
+    collapsed = poses.relabel(RosterMap.of({"a": "X", "b": "X"})).decide()
+    assert isinstance(collapsed, Unresolvable)
+    assert "collapses" in collapsed.reason
