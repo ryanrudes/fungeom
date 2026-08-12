@@ -7,6 +7,17 @@ All notable changes to fungeom are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`Sampling.at_rate(rate, count, start=0.0)`** — the grid `uniform` describes, parameterized the
+  way discrete data actually arrives. A recording knows how fast it was sampled and how many samples
+  it holds; it does not know the span they cover, and deriving that span means writing `count - 1` —
+  one fewer interval than there are samples — at every call site. That off-by-one now lives in one
+  tested place. `rate` may be a deferred `Scalar` and `start` an `Instant`, so both propagate.
+  `Unresolvable` for fewer than one sample, for a rate that is not positive (zero, negative or NaN —
+  none define a spacing), and for a rate so large that `1 / rate` underflows and the grid stops
+  increasing. Concrete: `PacedSampling`.
+
 ## [0.5.0] - 2026-06-29
 
 ### Added

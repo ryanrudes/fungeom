@@ -608,6 +608,8 @@ CASES: dict[str, Callable[[], object]] = {
     "timeline.relative_to.other": lambda: GOOD_TL.relative_to(BAD_TL),
     # sampling
     "sampling.uniform.interval": lambda: Sampling.uniform(BAD_INT, 3),
+    "sampling.at_rate.rate": lambda: Sampling.at_rate(BAD_S, 3),
+    "sampling.at_rate.start": lambda: Sampling.at_rate(60.0, 3, start=BAD_I),
     "sampling.span": lambda: BAD_SAMP.span(),
     "sampling.count": lambda: BAD_SAMP.count(),
     "sampling.rate": lambda: BAD_SAMP.rate(),

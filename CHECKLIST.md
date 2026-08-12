@@ -723,13 +723,16 @@ Sits above `timemap` + `instant` in the layering.
 ## Sampling — value: `SamplingValue` (a strictly-increasing time base)
 
 The discrete time axis of real data. **Constructors:** `at_times(times)` (explicit
-timestamps), `uniform(over, count)` (a grid over an interval). No combinators yet.
-Sits above `interval` in the layering (`sampling` imports `interval`).
+timestamps), `uniform(over, count)` (a grid over an interval), `at_rate(rate, count,
+start)` (that same grid from the rate and count discrete data actually carries). No
+combinators yet. Sits above `interval` in the layering (`sampling` imports `interval`,
+and `at_rate` imports `instant` below it).
 
 | Op | Concrete | Impl | Doc | Unit | Partial | Prop | README |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | `at_times` | `ExplicitSampling` | ✅ | ✅ | ✅ | ✅ (empty / non-increasing) | — | ✅ |
 | `uniform` | `UniformSampling` | ✅ | ✅ | ✅ | ✅ (count < 1 / degenerate) | ✅ | ✅ |
+| `at_rate` | `PacedSampling` | ✅ | ✅ | ✅ | ✅ (count < 1 / rate ≤ 0 or NaN / spacing underflows) | ✅ (rate, start) | ✅ |
 | `span` | `SamplingSpan` → `Interval` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `count` | `SamplingCount` → `Scalar` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | `rate` | `SamplingRate` → `Scalar` | ✅ | ✅ | ✅ | ✅ (< 2 samples) | ✅ | ✅ |
