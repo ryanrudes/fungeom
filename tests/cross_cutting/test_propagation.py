@@ -707,6 +707,7 @@ CASES: dict[str, Callable[[], object]] = {
     "pbsignal.transformed_by.pose": lambda: GOOD_PBS.transformed_by(BAD_TSIG),
     "pbsignal.transformed_by_bundle.signal": lambda: BAD_PBS.transformed_by(GOOD_TBS),
     "pbsignal.transformed_by_bundle.poses": lambda: GOOD_PBS.transformed_by(BAD_TBS),
+    "pbsignal.fit_convex_face": lambda: BAD_PBS.fit_convex_face(),
     "pbsignal.where.source": lambda: BAD_PBS.where([0]),
     "pbsignal.where.keys": lambda: GOOD_PBS.where(BAD_ROSTER),
     "pbsignal.relabel.source": lambda: BAD_PBS.relabel(GOOD_RMAP),

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass, replace
-from typing import overload
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -70,6 +70,10 @@ from fungeom.primitives.signals.series import (
 )
 from fungeom.primitives.signals.plane import PLANE_BLEND, PlaneSignal
 from fungeom.primitives.signals.scalar import SCALAR_BLEND, ScalarSignal
+
+if TYPE_CHECKING:  # the signals.face module imports this one, so the edge is annotation-only
+    from fungeom.primitives.signals.face import FaceSignal
+
 from fungeom.primitives.signals.transform import TRANSFORM_BLEND, TransformSignal
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
@@ -382,6 +386,30 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         near-collinear, or isotropic) makes the whole signal ``Unresolvable``.
         """
         return _FittedPlaneSignal(source=self, tolerance=tolerance)
+
+    def fit_convex_face(self, *, tolerance: float = 1e-6) -> FaceSignal:
+        """The **convex** patch fitted to the cloud at every frame (→ ``FaceSignal``).
+
+        The bounded companion to :meth:`fit_plane`: per frame, fit the least-squares plane, then
+        take the convex hull of the points in that plane's chart. Bounded is the point — an
+        unbounded plane reports a foot as touching a floor it is two metres to the side of, while a
+        patch's ``clearance`` is the honest distance to the *footprint*.
+
+        **Convex is in the name because it is a modeling choice, not a property of the data.** A
+        hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
+        concave; this library will not pick that for you behind a neutral name.
+
+        Use it where the surface genuinely deforms. For a patch that only *moves* — one rigidly
+        driven by a single bone — ``FaceSignal.of(face, pose)`` fits once and transports, which is
+        exact and far cheaper.
+
+        Strict: a frame whose cloud is degenerate (fewer than three present points, near-collinear,
+        or isotropic) makes the whole signal ``Unresolvable``, as does one whose points have no
+        two-dimensional hull in the fitted chart.
+        """
+        from fungeom.primitives.signals.face import _FittedFaceSignal
+
+        return _FittedFaceSignal(source=self, tolerance=tolerance)
 
     def centroid(self) -> Point3Signal:
         """The cloud's centroid at every frame (→ ``Point3Signal``) — the CoM / cluster-centre track.

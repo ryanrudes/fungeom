@@ -201,3 +201,78 @@ def test_clearance_resolve_over_on_an_empty_face_raises() -> None:
         empty.clearance(foot).resolve_over(grid)
     with pytest.raises(UnresolvableError):
         empty.clearance(cloud).resolve_over(grid)
+
+
+# --- fitted patches: the plane AND the footprint refitted per frame ---------------------------
+
+
+def _drifting_cloud(frames: int = 4, *, spread: float = 1.0, rise: float = 0.02) -> Point3BundleSignal:
+    """A flat, well-spread cloud translating upward — a deforming patch's simplest stand-in."""
+    base = np.array([[0.0, 0.0, 0.0], [spread, 0.0, 0.0], [spread, spread, 0.0], [0.0, spread, 0.0]])
+    stack = np.stack([base + np.array([0.0, 0.0, rise * step]) for step in range(frames)])
+    return Point3BundleSignal.from_frames(np.arange(frames) / 60.0, stack)
+
+
+def _times(frames: int = 4) -> list[float]:
+    return (np.arange(frames) / 60.0).tolist()
+
+
+def test_fit_convex_face_refits_plane_and_footprint_each_frame() -> None:
+    patch = _drifting_cloud().fit_convex_face()
+    assert patch.is_resolvable
+    first, last = patch.at(0.0).resolve(), patch.at(3 / 60).resolve()
+    assert first.region.area() == pytest.approx(1.0)
+    assert last.region.area() == pytest.approx(1.0), "a translating patch keeps its footprint"
+    assert float(last.plane.point[2]) == pytest.approx(0.06), "but the plane follows the cloud"
+
+
+def test_a_fitted_patch_has_no_static_region() -> None:
+    """Returning one frame's hull as though it stood for all of them would be a lie."""
+    decision = _drifting_cloud().fit_convex_face().region().decide()
+    assert isinstance(decision, Unresolvable)
+    assert "refitted every frame" in decision.reason
+
+
+def test_a_transported_patch_still_has_its_static_region() -> None:
+    """The rigid case is unchanged by the facade split: transport moves the plane, not the region."""
+    assert _rising_patch().region().resolve().area() == pytest.approx(8.0), "the 4x2 rectangle"
+
+
+def test_fitted_patch_answers_the_whole_query_surface() -> None:
+    patch = _drifting_cloud().fit_convex_face()
+    assert patch.plane().is_resolvable
+    assert patch.frame().is_resolvable
+    assert len(patch.boundary().at(0.0).resolve().roster) == 4
+    above = Point3Signal.from_samples(_times(), [[0.5, 0.5, 1.0]] * 4)
+    clearance = patch.clearance(above).resolve_over(Sampling.at_times(_times()))
+    assert clearance[0] == pytest.approx(1.0)
+    assert clearance[-1] == pytest.approx(0.94), "the patch rises toward the fixed query point"
+    assert patch.contains(above).at(0.0).resolve() is True
+
+
+def test_fitted_patch_readbacks_fall_back_to_the_generic_path() -> None:
+    """The batched readbacks key off a *static* face; a fitted patch has none, so they must defer."""
+    patch = _drifting_cloud().fit_convex_face()
+    onto = Sampling.at_times(_times())
+    assert patch.plane().normal().resolve_over(onto).shape == (4, 3)
+    assert patch.frame().resolve_over(onto).shape == (4, 4, 4)
+    assert patch.boundary().resolve_over(onto)[0].shape == (4, 4, 3)
+    cloud = Point3BundleSignal.from_frames(_times(), np.tile([[0.5, 0.5, 1.0]], (4, 1, 1)))
+    values, mask = patch.clearance(cloud).resolve_over(onto)
+    assert values.shape == (4, 1) and mask.all()
+
+
+def test_a_degenerate_frame_makes_the_whole_fitted_patch_unresolvable() -> None:
+    """Strict, like `fit_plane`: one unusable frame is not quietly dropped."""
+    collinear = np.tile(np.array([[0.0, 0, 0], [1.0, 0, 0], [2.0, 0, 0], [3.0, 0, 0]]), (3, 1, 1))
+    decision = Point3BundleSignal.from_frames(_times(3), collinear).fit_convex_face().decide()
+    assert isinstance(decision, Unresolvable)
+    assert "plane fit failed at a frame" in decision.reason
+
+
+def test_the_footprint_between_samples_is_the_earlier_bracket_s() -> None:
+    """A hull's vertex count changes frame to frame, so footprints cannot be interpolated."""
+    patch = _drifting_cloud().fit_convex_face()
+    midway = patch.at(0.5 / 60).resolve()
+    assert midway.region.area() == pytest.approx(patch.at(0.0).resolve().region.area())
+    assert float(midway.plane.point[2]) == pytest.approx(0.01), "the plane, though, does interpolate"

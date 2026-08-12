@@ -28,6 +28,34 @@ All notable changes to fungeom are documented here. The format follows
   are shared with the new `decide_where_over_time` / `decide_relabeled_over_time`, so the static and
   temporal forms cannot drift apart. Concretes: `_Where…BundleSignal`, `_Relabeled…BundleSignal`.
 
+- **`Point3BundleSignal.fit_convex_face(tolerance=…)` → `FaceSignal`** — the *bounded* companion to
+  `fit_plane`, refitting the plane **and** the convex footprint to a deforming cloud at every frame.
+  Bounded is the whole point: an unbounded `PlaneSignal.signed_distance` reports a foot as touching
+  a floor it is two metres to the side of, while a patch's `clearance` measures to the *footprint*.
+  Until now a deforming selection could be given an honest moving plane but never an honest moving
+  patch — only a rigid one, via `FaceSignal.of`, which is a lie for a surface that deforms.
+
+  **`convex` is in the name on purpose.** A hull is a modeling choice — right for a sole or a deck,
+  wrong for a splayed hand whose true footprint is concave — and the membership rule forbids hiding
+  such a choice behind a neutral name.
+
+  Between samples the footprint is the earlier bracket's, on an interpolated plane: a convex hull's
+  vertex count changes from frame to frame, so there is no correspondence to interpolate a footprint
+  along. Values *at* sample instants are exact. Strict, like `fit_plane`: one degenerate frame makes
+  the whole signal `Unresolvable`.
+
+### Changed
+
+- **`FaceSignal` is now a facade** over `_TransportedFaceSignal` (the existing rigid patch, built by
+  the unchanged `FaceSignal.of`) and the new `_FittedFaceSignal`. Its five batched readbacks reached
+  past the decided value into `.face` / `.pose`, so each now guards on the transported kind and
+  defers to the generic per-instant path otherwise — the fast paths are untouched for rigid patches.
+
+  **`FaceSignal.region()` now decides `Unresolvable` for a fitted patch.** It remains the static
+  footprint for a transported one, so no existing use changes. A fitted patch has no single static
+  region, and returning one frame's hull as though it stood for all of them would be exactly the
+  kind of plausible-but-wrong answer this library exists to refuse; ask `at(t).region()` instead.
+
 ## [0.7.0] - 2026-08-12
 
 ### Added
