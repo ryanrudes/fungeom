@@ -12,6 +12,8 @@ from fungeom import (
     Instant,
     Interval,
     Plane,
+    PlaneSignal,
+    PlaneValue,
     Point3,
     Point3Bundle,
     Point3BundleSignal,
@@ -23,6 +25,8 @@ from fungeom import (
     Unresolvable,
     UnresolvableError,
 )
+
+_FLAT = PlaneValue(point=[0, 0, 0], normal=[0, 0, 1])  # the z = 0 plane, supplied from outside
 
 
 def _rising_patch() -> FaceSignal:
@@ -276,3 +280,119 @@ def test_the_footprint_between_samples_is_the_earlier_bracket_s() -> None:
     midway = patch.at(0.5 / 60).resolve()
     assert midway.region.area() == pytest.approx(patch.at(0.0).resolve().region.area())
     assert float(midway.plane.point[2]) == pytest.approx(0.01), "the plane, though, does interpolate"
+
+
+# --- hull_in: the footprint of one cloud, on a plane decided somewhere else --------------------
+
+
+_CORE = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]]  # a flat unit square
+_RIM = [3.0, 0.5, 1.0]  # far out and lifted — it belongs to the outline, not to the surface fit
+
+
+def _core_and_rim(frames: int = 2) -> tuple[Point3BundleSignal, Point3BundleSignal]:
+    """The motivating split: a flat core that locates the plane, and a wider outline that bounds it."""
+    core = np.stack([np.array(_CORE)] * frames)
+    whole = np.stack([np.array([*_CORE, _RIM])] * frames)
+    times = _times(frames)
+    return Point3BundleSignal.from_frames(times, core), Point3BundleSignal.from_frames(times, whole)
+
+
+def test_hull_in_fits_the_plane_to_one_selection_and_the_footprint_to_another() -> None:
+    """The whole point: the sample that says *where the surface is* need not be the one that bounds it."""
+    core, whole = _core_and_rim()
+    patch = whole.hull_in(core.fit_plane()).at(0.0).resolve()
+    assert abs(float(patch.plane.normal[2])) == pytest.approx(1.0), "the plane is the flat core's"
+    assert float(patch.plane.point[2]) == pytest.approx(0.0)
+    assert patch.region.area() == pytest.approx(2.0), "the footprint is the whole outline's — square + rim"
+
+    fused = whole.fit_convex_face().at(0.0).resolve()  # what fusing the two questions costs
+    assert abs(float(fused.plane.normal[2])) < 0.99, "one cloud for both tilts the plane onto the rim"
+    assert float(fused.plane.point[2]) == pytest.approx(0.2)
+
+
+def test_fit_convex_face_is_exactly_hull_in_its_own_fitted_plane() -> None:
+    """Pins the delegation: the fused form *is* the general one with the plane fitted from the same points."""
+    cloud = _drifting_cloud()
+    fused = cloud.fit_convex_face(tolerance=1e-9).resolve()
+    composed = cloud.hull_in(cloud.fit_plane(tolerance=1e-9), tolerance=1e-9).resolve()
+    assert np.allclose(np.asarray(fused.times), np.asarray(composed.times))
+    for here, there in zip(fused.values, composed.values, strict=True):
+        assert np.allclose(here.plane.point, there.plane.point)
+        assert np.allclose(here.plane.normal, there.plane.normal)
+        assert np.allclose(here.region.rings[0], there.region.rings[0])
+
+
+def test_hull_in_aligns_the_two_signals_on_the_union_of_their_instants() -> None:
+    """A two-signal op, aligned like every other: the cloud's frames and the plane's, together."""
+    cloud = _drifting_cloud(3, rise=0.0)  # frames at 0, 1/60, 2/60
+    plane = PlaneSignal.from_samples([0.0, 2 / 60], [_FLAT, _FLAT])  # only the two ends
+    assert len(cloud.hull_in(plane).resolve().values) == 3, "the union, not the plane's two"
+
+
+def test_hull_in_answers_the_whole_query_surface_and_has_no_static_region() -> None:
+    core, whole = _core_and_rim(3)
+    patch = whole.hull_in(core.fit_plane())
+    onto = Sampling.at_times(_times(3))
+    assert patch.plane().normal().resolve_over(onto).shape == (3, 3)
+    assert patch.frame().resolve_over(onto).shape == (3, 4, 4)
+    assert patch.boundary().resolve_over(onto)[0].shape == (3, 5, 3), "square + rim, hulled"
+    above = Point3Signal.from_samples(_times(3), [[0.5, 0.5, 2.0]] * 3)
+    assert patch.clearance(above).resolve_over(onto) == pytest.approx([2.0, 2.0, 2.0])
+    decision = patch.region().decide()
+    assert isinstance(decision, Unresolvable) and "refitted every frame" in decision.reason
+
+
+def test_hull_in_refuses_a_frame_with_too_few_present_points() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0],
+        [_CORE[:3]] * 2,
+        present=[[True, True, True], [True, True, False]],  # one drops out at t = 1
+    )
+    decision = cloud.hull_in(PlaneSignal.from_samples([0.0, 1.0], [_FLAT, _FLAT])).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "needs at least 3 points, got 2" in decision.reason
+
+
+def test_hull_in_refuses_a_frame_whose_cloud_is_wholly_absent() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0], [_CORE[:3]] * 2, present=[[True, True, True], [False, False, False]]
+    )
+    decision = cloud.hull_in(PlaneSignal.from_samples([0.0, 1.0], [_FLAT, _FLAT])).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "needs at least 3 points, got 0" in decision.reason
+
+
+def test_hull_in_refuses_a_footprint_that_is_collinear_within_tolerance() -> None:
+    """A plane tilted hard against the cloud projects it to a sliver — a hull of numerical noise.
+
+    Discriminating on purpose: the sliver is 1e-9 thick, so it is *not* exactly degenerate and the
+    exact (Qhull) test accepts it. Only the tolerance refuses it — and lowering the tolerance below
+    the sliver's thickness lets it through again, which is what makes `tolerance` a reified input
+    rather than a hidden constant.
+    """
+    sliver = [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1e-9], [0.0, 1.0, 1e-9]]
+    cloud = Point3BundleSignal.from_frames([0.0, 1.0], [sliver] * 2)
+    edge_on = PlaneSignal.from_samples([0.0, 1.0], [PlaneValue(point=[0, 0, 0], normal=[1, 0, 0])] * 2)
+    decision = cloud.hull_in(edge_on).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "collinear within tolerance" in decision.reason
+    assert cloud.hull_in(edge_on, tolerance=1e-12).is_resolvable, "the same points, a stricter tolerance"
+
+
+def test_hull_in_is_unresolvable_where_the_plane_is_between_opposed_normals() -> None:
+    """The plane's own partiality reaches the patch: no unique chart, so no footprint."""
+    cloud = _drifting_cloud(3, rise=0.0)  # a frame at 1/60, between the plane's two samples
+    flipping = PlaneSignal.from_samples(
+        [0.0, 2 / 60], [PlaneValue(point=[0, 0, 0], normal=[0, 0, 1]), PlaneValue(point=[0, 0, 0], normal=[0, 0, -1])]
+    )
+    decision = cloud.hull_in(flipping).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "opposed normals" in decision.reason
+
+
+def test_hull_in_over_disjoint_supports_is_unresolvable() -> None:
+    cloud = _drifting_cloud(3)
+    elsewhere = PlaneSignal.from_samples([10.0, 11.0], [_FLAT, _FLAT])
+    decision = cloud.hull_in(elsewhere).decide()
+    assert isinstance(decision, Unresolvable)
+    assert "do not overlap" in decision.reason

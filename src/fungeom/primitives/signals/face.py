@@ -11,6 +11,12 @@ an occluded or off-support point is ``Unresolvable``, never a silently-transport
 It is a ``Signal[FaceValue]`` (each instant's transported patch); the per-instant value is the
 static face moved by the pose at that instant, blended between samples by interpolating the plane
 (lerp point / slerp normal) with the region kept.
+
+That is the *rigid* kind. The other kind is the **per-frame** patch, for a surface that genuinely
+deforms: ``Point3BundleSignal.hull_in(plane)`` re-hulls a moving cloud in a moving plane's chart at
+every frame, and ``fit_convex_face()`` is that with the plane fitted from the very same points. They
+have no static face to transport, so ``region()`` is ``Unresolvable`` for them and the batched
+readbacks below fall back to the generic per-instant path.
 """
 
 from __future__ import annotations
@@ -23,7 +29,6 @@ import numpy as np
 import shapely
 
 from fungeom.core.resolvability import Resolvability, Resolvable, UnresolvableError, Unresolvable
-from fungeom.primitives.bundle.resolvers.fit import fit_plane_coords, orient_plane_track
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.face.decidability import FaceDecision
 from fungeom.primitives.face.resolvers.base import Face
@@ -34,7 +39,7 @@ from fungeom.primitives.plane.value import PlaneValue
 from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.region2.decidability import Region2Decision
 from fungeom.primitives.region2.resolvers.base import Region2
-from fungeom.primitives.region2.resolvers.hull import _hull_of
+from fungeom.primitives.region2.resolvers.hull import TolerantBundleHullRegion2
 from fungeom.primitives.region2.shapely_bridge import to_shapely
 from fungeom.primitives.region2.value import Region2Value
 from fungeom.primitives.sampling.resolvers.base import Sampling
@@ -84,9 +89,11 @@ class FaceSignal(Signal[FaceValue]):
     - :meth:`of` — a **rigid** patch: one static ``Face`` transported by a ``TransformSignal``. The
       footprint never changes, only where it sits, so :meth:`region` is a single static region and
       the readbacks below take a fast batched path.
-    - :meth:`~fungeom.Point3BundleSignal.fit_convex_face` — a **fitted** patch: the plane *and* the
-      footprint are refitted to a moving cloud at every frame. Use it when the surface itself
-      deforms, where a rigid transport would be a lie.
+    - :meth:`~fungeom.Point3BundleSignal.hull_in` and
+      :meth:`~fungeom.Point3BundleSignal.fit_convex_face` — a **per-frame** patch: the footprint is
+      re-hulled at every frame (and, for ``fit_convex_face``, the plane refitted with it). Use these
+      when the surface itself deforms, where a rigid transport would be a lie. :meth:`region` is
+      ``Unresolvable`` for them and the readbacks take the generic per-instant path.
 
     Query world geometry as signals: :meth:`plane` (→ ``PlaneSignal``, so ``normal``/``origin``
     follow), :meth:`frame` (→ ``TransformSignal``), :meth:`boundary` (→ ``Point3BundleSignal``),
@@ -112,10 +119,10 @@ class FaceSignal(Signal[FaceValue]):
     def region(self) -> Region2:
         """The patch's *static* footprint in the plane's chart, when it has one.
 
-        A rigidly transported patch does: transport moves the plane, never the region. A **fitted**
-        patch does not — its footprint is refitted per frame — so this decides ``Unresolvable``
-        there rather than returning one frame's hull as though it stood for all of them. Ask
-        ``at(t).region()`` for the footprint at an instant.
+        A rigidly transported patch does: transport moves the plane, never the region. A
+        **per-frame** patch does not — its footprint is re-hulled per frame — so this decides
+        ``Unresolvable`` there rather than returning one frame's hull as though it stood for all of
+        them. Ask ``at(t).region()`` for the footprint at an instant.
         """
         return _NoStaticRegion2(signal=self)
 
@@ -158,7 +165,7 @@ class FaceSignal(Signal[FaceValue]):
 
 @dataclass(frozen=True, eq=False)
 class _NoStaticRegion2(Region2):
-    """The footprint of a patch that has no single static one — a fitted patch."""
+    """The footprint of a patch that has no single static one — a per-frame patch."""
 
     signal: FaceSignal
 
@@ -166,7 +173,7 @@ class _NoStaticRegion2(Region2):
         if isinstance(self.signal, _TransportedFaceSignal):
             return self.signal.face.region().decide()
         return Unresolvable(
-            "a fitted patch has no static region — its footprint is refitted every frame; "
+            "a per-frame patch has no static region — its footprint is refitted every frame; "
             "ask at(t).region() for one instant's"
         )
 
@@ -187,13 +194,25 @@ class _TransportedFaceSignal(FaceSignal):
 
 
 @dataclass(frozen=True, eq=False)
-class _FittedFaceSignal(FaceSignal):
-    """A patch refitted to a moving cloud at every frame — plane *and* footprint.
+class _HulledFaceSignal(FaceSignal):
+    """A patch re-hulled every frame: *this* cloud's convex hull taken in *that* plane's chart.
 
-    The deforming counterpart of :class:`_TransportedFaceSignal`. Per frame: fit the least-squares
-    plane to the present points, then take the convex hull of those points in that plane's chart.
-    Normals are oriented to agree frame to frame (the per-frame SVD sign is arbitrary) *before* the
-    projection, since the chart follows the normal.
+    The deforming counterpart of :class:`_TransportedFaceSignal`, and the general form of the
+    per-frame fit — the plane is supplied from outside rather than fitted from the same points, so
+    the cloud that says *where the surface is* and the cloud that says *how far it extends* need not
+    be the same one. ``Point3BundleSignal.fit_convex_face`` is this with the plane fitted from the
+    hulled cloud itself.
+
+    Built by composition, per aligned instant: ``Face.on(plane.at(t), hull(cloud.at(t) in that
+    chart))``. So it is time-aligned like every other two-signal op (the union of sample instants,
+    clipped to the intersection of supports) and every partiality — an unresolvable plane or cloud,
+    a frame with fewer than three present points, a projection that is collinear within
+    ``tolerance`` — flows out of the composed resolvers rather than being re-implemented here.
+
+    Nothing here orients the normal track. That is deliberate: the plane is the caller's, and so is
+    its orientation. ``fit_plane`` already flips each frame's arbitrary SVD normal to agree with the
+    previous one before handing the track over, which is why ``fit_convex_face`` still gets a
+    continuous chart; a plane signal built some other way keeps whatever orientation it was given.
 
     **Between samples the footprint is the earlier bracket's**, on an interpolated plane — the
     existing face blend. Interpolating footprints is not well defined: a convex hull's vertex count
@@ -201,38 +220,17 @@ class _FittedFaceSignal(FaceSignal):
     sample instants are exact, which is what a baked take is read at.
     """
 
-    source: Point3BundleSignal
+    cloud: Point3BundleSignal
+    carrier: PlaneSignal
     tolerance: float
 
     def _decide(self) -> Resolvability[SampledSeries[FaceValue]]:
-        decided = self.source.decide()
-        if isinstance(decided, Unresolvable):
-            return decided
-        series = decided.value
-        per_frame = [np.array([frame.members[key].coord for key in frame.support()]) for frame in series.values]
-        raw: list[PlaneValue] = []
-        for coords in per_frame:
-            fit = fit_plane_coords(coords, self.tolerance)
-            if isinstance(fit, Unresolvable):
-                return Unresolvable(f"plane fit failed at a frame: {fit.reason}")
-            raw.append(fit.value)
+        def patch_at(t: float) -> Face:
+            plane = self.carrier.at(t)  # bound once: two `at` calls would be two unmemoized nodes
+            chart = self.cloud.at(t).in_frame(plane)
+            return Face.on(plane, TolerantBundleHullRegion2(cloud=chart, tolerance=self.tolerance))
 
-        faces: list[FaceValue] = []
-        for plane, coords in zip(orient_plane_track(raw), per_frame, strict=True):
-            hull = _hull_of([plane.to_local(coord) for coord in coords])
-            if isinstance(hull, Unresolvable):  # pragma: no cover - see below
-                # Unreachable as the two kernels are tuned today, and kept anyway. The plane fit's
-                # uniqueness test is strictly stronger than the hull's degeneracy test: any point
-                # set whose chart projection has no 2-D hull is near-collinear or near-isotropic in
-                # 3-D, which `fit_plane_coords` already rejects. Verified by construction over
-                # collinear, duplicated, sliver and near-collinear inputs — the fit refuses each
-                # first. This guard exists so the pair cannot drift silently if either tolerance is
-                # ever retuned; it is excluded from coverage rather than deleted.
-                return Unresolvable(f"footprint hull failed at a frame: {hull.reason}")
-            faces.append(FaceValue(plane=plane, region=hull.value))
-        return Resolvable(
-            SampledSeries(series.times, tuple(faces), series.interpolation, series.boundary, FACE_BLEND, series.support)
-        )
+        return decide_lifted(self.cloud, self.carrier, patch_at, FACE_BLEND)
 
 
 @dataclass(frozen=True, eq=False)
@@ -267,7 +265,7 @@ class _FaceSignalPlane(PlaneSignal):
 
     def _sampled_planes(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
         if not isinstance(self.source, _TransportedFaceSignal):
-            # A fitted patch has no static face to batch against; take the generic path.
+            # A per-frame patch has no static face to batch against; take the generic path.
             return super()._sampled_planes(onto)
         static = self.source.face.plane().resolve()  # PlaneValue; raises if the plane is ungrounded
         poses = self.source.pose.resolve_over(onto)  # (T, 4, 4) — one batched read; raises off-support
@@ -298,8 +296,8 @@ class _FaceSignalFrame(TransformSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[RigidTransform]]:
         if not isinstance(self.source, _TransportedFaceSignal):
-            # A fitted patch has a different frame each instant; read it per instant. A resolvable
-            # fitted face always has a proper (hulled) region, so its canonical frame exists.
+            # A per-frame patch has a different frame each instant; read it per instant. A
+            # resolvable hulled face always has a proper region, so its canonical frame exists.
             return decide_signal_map(self.source, lambda face: face.frame(), TRANSFORM_BLEND)
         decided = self.source.face.frame().decide()  # the static patch frame (Unresolvable if empty)
         if isinstance(decided, Unresolvable):
@@ -309,7 +307,7 @@ class _FaceSignalFrame(TransformSignal):
 
     def resolve_over(self, onto: Sampling) -> np.ndarray:
         if not isinstance(self.source, _TransportedFaceSignal):
-            # A fitted patch has no static face to batch against; take the generic path.
+            # A per-frame patch has no static face to batch against; take the generic path.
             return super().resolve_over(onto)
         static_frame = self.source.face.frame().resolve().matrix  # (4, 4); raises if empty / ungrounded
         poses = self.source.pose.resolve_over(onto)  # (T, 4, 4); raises off-support — one batched read
@@ -324,8 +322,8 @@ class _FaceSignalBoundary(Point3BundleSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
         if not isinstance(self.source, _TransportedFaceSignal):
-            # A fitted patch's footprint is refitted per frame, so its vertices are too — and their
-            # count may change between frames, which is why they cannot be blended, only sampled.
+            # A per-frame patch's footprint is re-hulled per frame, so its vertices are too — and
+            # their count may change between frames, so they cannot be blended, only sampled.
             return decide_signal_map(self.source, lambda face: face.boundary_cloud(), POINT3_BUNDLE_BLEND)
         decided = self.source.face.boundary().decide()  # the static footprint vertices (world)
         if isinstance(decided, Unresolvable):
@@ -337,7 +335,7 @@ class _FaceSignalBoundary(Point3BundleSignal):
 
     def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
         if not isinstance(self.source, _TransportedFaceSignal):
-            # A fitted patch has no static face to batch against; take the generic path.
+            # A per-frame patch has no static face to batch against; take the generic path.
             return super().resolve_over(onto)
         cloud = self.source.face.boundary().resolve()  # BundleValue[Point3Value]; raises if ungrounded
         vertices = np.array([cloud.members[key].coord for key in cloud.roster], dtype=float).reshape(-1, 3)
@@ -404,7 +402,7 @@ class _FaceClearanceSignal(ScalarSignal):
         empty — no surface to measure to).
         """
         if not isinstance(self.face_signal, _TransportedFaceSignal):
-            # A fitted patch has no static face to batch against; take the generic path.
+            # A per-frame patch has no static face to batch against; take the generic path.
             return super().resolve_over(onto)
         face = self.face_signal.face.resolve()  # FaceValue; raises if the face is ungrounded
         if face.region.is_empty:
@@ -438,7 +436,7 @@ class _FaceClearanceBundleSignal(ScalarBundleSignal):
         patch is empty).
         """
         if not isinstance(self.face_signal, _TransportedFaceSignal):
-            # A fitted patch has no static face to batch against; take the generic path.
+            # A per-frame patch has no static face to batch against; take the generic path.
             return super().resolve_over(onto)
         face = self.face_signal.face.resolve()
         if face.region.is_empty:

@@ -387,13 +387,54 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         """
         return _FittedPlaneSignal(source=self, tolerance=tolerance)
 
+    def hull_in(self, plane: PlaneSignal, *, tolerance: float = 1e-6) -> FaceSignal:
+        """This cloud's **convex** hull, taken in ``plane``'s chart at every frame (→ ``FaceSignal``).
+
+        The bounded patch whose surface is decided *elsewhere*. Per aligned instant: project this
+        cloud into that plane's two-dimensional chart, hull it, and return the result as a ``Face``
+        bounded on that plane. :meth:`fit_convex_face` is exactly this with the plane fitted from the
+        very same points.
+
+        **Why the plane comes from outside.** One vertex set cannot answer both of a patch's
+        questions well. *Where is the surface* wants a genuinely planar sample — the flat
+        weight-bearing core of a sole — because a curved rim dragged into the fit tilts the plane.
+        *How far does it extend* wants to be inclusive — the whole outline, rim included — because a
+        footprint that stops at the flat core under-reports contact. Fitting the plane on one
+        selection and hulling another is how both get the sample they need, and it is not
+        expressible when the two are fused.
+
+        **Convex is in the name because it is a modeling choice, not a property of the data.** A
+        hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
+        concave; this library will not pick that for you behind a neutral name.
+
+        Time-aligned like every two-signal op: the union of the two signals' sample instants, clipped
+        to the intersection of their supports, read linearly between them. ``Unresolvable`` if either
+        signal is, if their supports are disjoint, or — strictly, at *any* aligned instant — if the
+        cloud has fewer than three present points there or its projection into that instant's chart
+        is collinear within ``tolerance``. That last case is what makes ``tolerance`` earn its place
+        here: a plane tilted steeply against the cloud projects it to something arbitrarily close to
+        a line, whose hull is a sliver of numerical noise rather than a footprint.
+
+        Between samples the footprint is the earlier bracket's, on an interpolated plane — a convex
+        hull's vertex count changes frame to frame, so there is no correspondence to interpolate a
+        footprint along. Values *at* sample instants are exact.
+        """
+        from fungeom.primitives.signals.face import _HulledFaceSignal
+
+        return _HulledFaceSignal(cloud=self, carrier=plane, tolerance=tolerance)
+
     def fit_convex_face(self, *, tolerance: float = 1e-6) -> FaceSignal:
         """The **convex** patch fitted to the cloud at every frame (→ ``FaceSignal``).
 
-        The bounded companion to :meth:`fit_plane`: per frame, fit the least-squares plane, then
-        take the convex hull of the points in that plane's chart. Bounded is the point — an
-        unbounded plane reports a foot as touching a floor it is two metres to the side of, while a
-        patch's ``clearance`` is the honest distance to the *footprint*.
+        The bounded companion to :meth:`fit_plane`, and precisely
+        ``self.hull_in(self.fit_plane(tolerance=t), tolerance=t)`` — per frame, fit the least-squares
+        plane to these points, then hull these same points in that plane's chart. Bounded is the
+        point: an unbounded plane reports a foot as touching a floor it is two metres to the side of,
+        while a patch's ``clearance`` is the honest distance to the *footprint*.
+
+        Use :meth:`hull_in` instead when the plane should be fitted to a *different* selection than
+        the one hulled — the usual case for a real surface, where the flat core that locates the
+        plane is a subset of the outline that bounds it.
 
         **Convex is in the name because it is a modeling choice, not a property of the data.** A
         hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
@@ -404,12 +445,9 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         exact and far cheaper.
 
         Strict: a frame whose cloud is degenerate (fewer than three present points, near-collinear,
-        or isotropic) makes the whole signal ``Unresolvable``, as does one whose points have no
-        two-dimensional hull in the fitted chart.
+        or isotropic) makes the whole signal ``Unresolvable``.
         """
-        from fungeom.primitives.signals.face import _FittedFaceSignal
-
-        return _FittedFaceSignal(source=self, tolerance=tolerance)
+        return self.hull_in(self.fit_plane(tolerance=tolerance), tolerance=tolerance)
 
     def centroid(self) -> Point3Signal:
         """The cloud's centroid at every frame (→ ``Point3Signal``) — the CoM / cluster-centre track.

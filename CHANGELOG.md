@@ -44,17 +44,60 @@ All notable changes to fungeom are documented here. The format follows
   along. Values *at* sample instants are exact. Strict, like `fit_plane`: one degenerate frame makes
   the whole signal `Unresolvable`.
 
+- **`Point3BundleSignal.hull_in(plane, tolerance=…)` → `FaceSignal`** — the general form of the
+  per-frame patch: *this* cloud's convex hull, taken in *that* plane's chart, at every aligned
+  instant. `fit_convex_face` is now literally `hull_in(fit_plane(t), t)`.
+
+  It exists because one vertex set cannot answer both of a patch's questions well. *Where is the
+  surface* wants a genuinely planar sample — the flat weight-bearing core of a sole — because a
+  curved rim dragged into the fit tilts the plane. *How far does it extend* wants to be inclusive —
+  the whole outline, rim included — because a footprint that stops at the core under-reports
+  contact. Fitting the plane on one selection and hulling another is how each question gets the
+  sample it needs, and until now that was expressible only for a *rigid* patch, by hand, as
+  `Face.on(plane_from_A, Region2.hull(B.in_frame(plane_from_A)))`. For a deforming one there was no
+  form at all: `fit_convex_face` fused the two, `FaceSignal.of` takes a *static* `Face`, and there
+  is no `Region2Signal` to carry a footprint on its own.
+
+  Built by composition — per aligned instant, `Face.on(plane.at(t), hull(cloud.at(t) in that
+  chart))` — so it is time-aligned like every other two-signal op (the union of sample instants,
+  clipped to the intersection of supports) and every partiality flows out of the composed resolvers
+  rather than being re-implemented: an unresolvable cloud or plane (including a plane that is
+  unresolvable only *between* its samples, across opposed normals), a frame with fewer than three
+  present points, a wholly occluded frame, disjoint supports.
+
+  **`tolerance` gates the hull here, not only a plane fit.** A plane supplied from outside can be
+  tilted hard against the cloud and project it to a sliver, whose hull's area, centroid and boundary
+  are numerical noise rather than a footprint — reachable precisely because the plane no longer
+  comes from the same points. The test is the same shape as the plane fit's, and refuses
+  *near*-collinear, not merely the exactly-degenerate that Qhull refuses.
+
 ### Changed
 
 - **`FaceSignal` is now a facade** over `_TransportedFaceSignal` (the existing rigid patch, built by
-  the unchanged `FaceSignal.of`) and the new `_FittedFaceSignal`. Its five batched readbacks reached
-  past the decided value into `.face` / `.pose`, so each now guards on the transported kind and
-  defers to the generic per-instant path otherwise — the fast paths are untouched for rigid patches.
+  the unchanged `FaceSignal.of`) and the new `_HulledFaceSignal` (the per-frame patch behind
+  `hull_in` / `fit_convex_face`). Its five batched readbacks reached past the decided value into
+  `.face` / `.pose`, so each now guards on the transported kind and defers to the generic
+  per-instant path otherwise — the fast paths are untouched for rigid patches.
 
-  **`FaceSignal.region()` now decides `Unresolvable` for a fitted patch.** It remains the static
-  footprint for a transported one, so no existing use changes. A fitted patch has no single static
-  region, and returning one frame's hull as though it stood for all of them would be exactly the
-  kind of plausible-but-wrong answer this library exists to refuse; ask `at(t).region()` instead.
+  **`FaceSignal.region()` now decides `Unresolvable` for a per-frame patch.** It remains the static
+  footprint for a transported one, so no existing use changes. A per-frame patch has no single
+  static region, and returning one frame's hull as though it stood for all of them would be exactly
+  the kind of plausible-but-wrong answer this library exists to refuse; ask `at(t).region()` instead.
+
+- **`fit_convex_face` is defined as `hull_in(fit_plane(t), t)`** and no longer has a concrete of its
+  own, so the fused and the general form cannot drift apart. One behavioural consequence, recorded
+  because it reads like a bug and is a decision: as a two-signal op the result is reconstructed the
+  way every lifted signal is — linearly, with an `undefined` boundary — where the old single-signal
+  implementation inherited the source cloud's own kernel and boundary (`fit_plane` still does).
+
+  Measured against the previous implementation rather than argued: **the samples are identical in
+  every case** — same time base, same support, same fitted planes, same hulled footprints — and the
+  only difference is how the patch is read *between* and *past* them, for a cloud built with a
+  non-default kernel. A `via=Interpolation.hold` cloud's patch now lerps its plane between samples
+  instead of selecting the earlier one, and an `outside=Boundary.hold` cloud's patch is now
+  `Unresolvable` past the last sample instead of holding it. Under the default linear / `undefined`
+  reading — what every consumer uses — old and new agree exactly. Re-fuse them only if a patch ever
+  needs to be read with its cloud's kernel.
 
 ## [0.7.0] - 2026-08-12
 
