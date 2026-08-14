@@ -58,13 +58,26 @@ class PlaneValue:
         The plane's intrinsic 2D chart. The gauge (rotation about the normal) is arbitrary
         but fixed by the normal alone — crossing with the coordinate axis least aligned with
         it — so :meth:`to_local` and :meth:`embed` are mutual inverses on the plane.
+
+        **Memoized on first use**, the way a ``Resolver`` memoizes its decision and for the same
+        reason: the chart is a pure function of an immutable normal, but it is asked for once per
+        *point charted* — half a million times for one cloud over one take — so recomputing it is
+        a per-point cost standing in for a constant. Lazily, not in ``__post_init__``: most planes
+        are never charted at all, and two ``np.cross`` calls are not free either. The axes are
+        handed out frozen, like every other array a value type exposes.
         """
-        helper = np.zeros(3)
-        helper[int(np.argmin(np.abs(self.normal)))] = 1.0
-        x = np.cross(self.normal, helper)
-        x = x / float(np.linalg.norm(x))
-        y = np.cross(self.normal, x)
-        return as_vec3(x), as_vec3(y)
+        cached: tuple[Float3, Float3] | None = getattr(self, "_axes", None)
+        if cached is None:
+            helper = np.zeros(3)
+            helper[int(np.argmin(np.abs(self.normal)))] = 1.0
+            x = np.cross(self.normal, helper)
+            x = x / float(np.linalg.norm(x))
+            y = np.cross(self.normal, x)
+            cached = (as_vec3(x), as_vec3(y))
+            freeze(cached[0])
+            freeze(cached[1])
+            object.__setattr__(self, "_axes", cached)
+        return cached
 
     def to_local(self, p: Float3) -> Float2:
         """The 2D coordinates of ``p`` in the plane's chart (orthogonally projected in-plane)."""

@@ -42,13 +42,24 @@ class Resolver[T](ABC):
         reason it cannot be resolved. Call :meth:`decide` (which memoizes this).
         """
 
+    def _decided(self) -> Resolvability[T] | None:
+        """This resolver's memoized decision, or ``None`` if it has not been decided yet.
+
+        Asks *without* forcing, which is what lets a caller prefer an already-paid decision
+        over a cheaper specialized recomputation (the entity-axis ``where`` pushdown does
+        exactly this: narrowing is cheaper than deciding in full, but not cheaper than
+        reading a decision that has already been made).
+        """
+        cached: Resolvability[T] | None = getattr(self, "_decision", None)
+        return cached
+
     def decide(self) -> Resolvability[T]:
         """Prove whether this resolver can be resolved (memoized).
 
         The result is cached on the (immutable) resolver, so deciding it again —
         or deciding a graph that reuses it as a sub-expression — is free.
         """
-        cached: Resolvability[T] | None = getattr(self, "_decision", None)
+        cached = self._decided()
         if cached is None:
             cached = self._decide()
             object.__setattr__(self, "_decision", cached)

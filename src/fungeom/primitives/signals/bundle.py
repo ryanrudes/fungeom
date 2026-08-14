@@ -44,12 +44,11 @@ from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.interval.resolvers.base import Interval
 from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.plane.value import PlaneValue
-from fungeom.primitives.point3.resolvers.base import Point3
-from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.point3.value import Point3Value, as_point3_block
 from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.sampling.resolvers.base import Sampling
-from fungeom.primitives.sampling.value import TimeSeries, as_times
+from fungeom.primitives.sampling.value import SamplingValue, TimeSeries, as_times
 from fungeom.primitives.signals.blend import Blend
 from fungeom.primitives.signals.boundary import Boundary
 from fungeom.primitives.signals.interpolation import Interpolation
@@ -106,6 +105,47 @@ class _Point3BundleBlend:
 
 
 POINT3_BUNDLE_BLEND = _Point3BundleBlend()
+
+
+def _world_anchor(frame: CoordinateFrame | Frame) -> Resolvability[RigidTransform]:
+    """The frame-to-world transform that every point of a same-framed block shares.
+
+    Exactly the work one ``Point3.at(x, y, z, frame=frame).decide()`` does before it can
+    world-anchor a single point — the grounded check and the parent-chain composition — hoisted
+    out of the per-point loop, because a ``(T, N, 3)`` stack carries *one* frame, not ``T·N`` of
+    them. Both spellings of a frame reduce to the same transform: a deferred :class:`Frame`
+    resolves to an already-world-anchored :class:`CoordinateFrame` (as ``FramedPoint3`` reads
+    it), a frame *value* is checked for grounding here (as ``LocatedPoint3`` does), and either
+    way an ungrounded frame is Unresolvable with the reason a single point would have given.
+    """
+    if isinstance(frame, Frame):
+        decided = frame.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        return Resolvable(decided.value.to_world())
+    if not frame.is_grounded:
+        return Unresolvable(f"frame {frame.name!r} is not grounded to the world")
+    return Resolvable(frame.to_world())
+
+
+def _anchored(block: np.ndarray, anchor: RigidTransform) -> np.ndarray:
+    """A ``(T, N, 3)`` stack of local coordinates carried into the world frame, in one pass.
+
+    The batched form of ``RigidTransform.apply_point`` — and deliberately written as the sum of
+    the rotation's scaled *columns* rather than as ``block @ rotation.T``, because that spelling
+    is **bit-identical** to the per-point ``rotation @ p + translation`` it replaces while a
+    matrix-multiply is not: BLAS is free to reassociate, which moved results by up to ~4e-13
+    relative in testing. A performance change that quietly perturbs the last bits of every
+    coordinate is not the change this is meant to be, and the fidelity costs ~17 ms on a stack
+    where the old path cost 27 s.
+    """
+    rotation, translation = anchor.matrix[:3, :3], anchor.matrix[:3, 3]
+    return (
+        block[..., 0:1] * rotation[:, 0]
+        + block[..., 1:2] * rotation[:, 1]
+        + block[..., 2:3] * rotation[:, 2]
+        + translation
+    )
 
 
 def _distributed_support(present: list[int], times: TimeSeries, base: CoverageValue) -> CoverageValue:
@@ -176,7 +216,9 @@ def decide_distributed[V](
 
 
 def decide_where_over_time[V](
-    source: Signal[BundleValue[V]], keep: tuple[Hashable, ...] | Roster
+    source: Signal[BundleValue[V]],
+    keep: tuple[Hashable, ...] | Roster,
+    narrow: Callable[[frozenset[Hashable]], Signal[BundleValue[V]] | None] | None = None,
 ) -> Resolvability[SampledSeries[BundleValue[V]]]:
     """Restrict every sample of a collection-over-time to ``keep`` — the temporal ``where``.
 
@@ -188,14 +230,27 @@ def decide_where_over_time[V](
 
     ``keep`` is resolved **once**, not per sample, and an unresolvable :class:`Roster` propagates
     rather than being forced early.
+
+    ``narrow`` is the optional **pushdown**: a source that can build its series over a subset of
+    its entity axis directly (``_narrowed_to``) returns an equivalent narrowed signal, and this
+    decides *that* instead of deciding the whole collection and discarding most of it. The
+    fallback — decide in full, then narrow each sample — is what a source that cannot push down
+    still gets, and the two agree sample for sample. The pushdown is skipped when the source has
+    already been decided: reading a memoized decision beats recomputing a cheaper one.
     """
     decided_keep = kept_keys(keep)
     if isinstance(decided_keep, Unresolvable):
         return decided_keep
+    if narrow is not None and source._decided() is None:
+        narrowed_source = narrow(decided_keep.value)
+        if narrowed_source is not None:
+            # Its samples carry only the kept keys already, so there is nothing left to
+            # restrict — and nothing was ever paid for the keys `keep` drops.
+            return narrowed_source.decide()
     match source.decide():
         case Resolvable(series):
-            narrow = tuple(narrowed(sample, decided_keep.value) for sample in series.values)
-            return Resolvable(replace(series, values=narrow))
+            narrow_all = tuple(narrowed(sample, decided_keep.value) for sample in series.values)
+            return Resolvable(replace(series, values=narrow_all))
         case Unresolvable() as bad:
             return bad
     raise AssertionError("unreachable")  # pragma: no cover
@@ -321,6 +376,25 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         ``keys`` may be an explicit sequence or a deferred :class:`~fungeom.Roster`.
         """
         return _WherePoint3BundleSignal(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """An equivalent signal carrying **only** ``kept`` on the entity axis — the ``where`` pushdown.
+
+        ``None`` (the default here) means "I cannot narrow myself" — :func:`decide_where_over_time`
+        then decides this signal in full and restricts each sample, which is always correct and
+        was for a while the only path. A node that *can* narrow returns a signal whose samples
+        already carry only ``kept``, so a selection of k of N markers costs k rather than N: the
+        stored frame stack narrows by *column*, and a purely temporal wrapper (``restrict`` /
+        ``resample`` / ``reparameterize``) narrows by pushing into its own source, because time
+        ops do not read keys and so commute with an entity-axis restriction.
+
+        The contract is exact agreement, not approximate: the narrowed signal must decide to
+        precisely what narrowing the full decision sample-by-sample would give — *including* its
+        partiality. That is why a node declines (returns ``None``) whenever the keys it would drop
+        could carry partiality of their own; a dropped key must not be able to turn an
+        ``Unresolvable`` into a value.
+        """
+        return None
 
     def relabel(self, mapping: RosterMap) -> Point3BundleSignal:
         """Re-key the cloud through ``mapping`` at every instant — the identity transfer over time.
@@ -555,30 +629,63 @@ class _SampledPoint3BundleSignal(Point3BundleSignal):
             case Resolvable(base):
                 if self.frames.shape[0] != base.count:
                     return Unresolvable(f"{self.frames.shape[0]} frames for {base.count} sample times")
+                width = len(self.member_keys)
+                mask = None if self.present is None else self.present[: base.count, :width]
+                # Whether the per-point path would build a single point at all. It is the only
+                # thing an ungrounded frame can spoil, so a stack with nothing present resolves
+                # to empty clouds however detached its frame is — as it does point by point.
+                occupied = base.count > 0 and width > 0 and (mask is None or bool(mask.any()))
+                anchor = _world_anchor(self.frame)
+                if isinstance(anchor, Unresolvable):
+                    if occupied:
+                        return anchor
+                    empty = [BundleValue[Point3Value](roster=self.member_keys, members={}) for _ in range(base.count)]
+                    return Resolvable(self._series(base, empty))
+                world = _anchored(self.frames[:, :width, :], anchor.value)  # the whole stack, once
                 clouds: list[BundleValue[Point3Value]] = []
                 for ti in range(base.count):
-                    members: dict[Hashable, Point3Value] = {}
-                    for ni, key in enumerate(self.member_keys):
-                        if self.present is None or bool(self.present[ti, ni]):
-                            x, y, z = self.frames[ti, ni]
-                            decided = Point3.at(float(x), float(y), float(z), frame=self.frame).decide()
-                            if isinstance(decided, Unresolvable):
-                                return decided
-                            members[key] = decided.value
+                    if mask is None:
+                        members = dict(zip(self.member_keys, as_point3_block(world[ti])))
+                    else:
+                        row = mask[ti]
+                        keys = tuple(key for key, ok in zip(self.member_keys, row) if ok)
+                        members = dict(zip(keys, as_point3_block(world[ti][row])))
                     clouds.append(BundleValue(roster=self.member_keys, members=members))
-                return Resolvable(
-                    SampledSeries(
-                        base.times,
-                        tuple(clouds),
-                        self.interpolation,
-                        self.boundary,
-                        POINT3_BUNDLE_BLEND,
-                        support_from_times(base.times, self.max_gap),
-                    )
-                )
+                return Resolvable(self._series(base, clouds))
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def _series(self, base: SamplingValue, clouds: list[BundleValue[Point3Value]]) -> Point3BundleSignal.Value:
+        """This carrier's ``clouds`` over ``base``, with its reconstruction and temporal support."""
+        return SampledSeries(
+            base.times,
+            tuple(clouds),
+            self.interpolation,
+            self.boundary,
+            POINT3_BUNDLE_BLEND,
+            support_from_times(base.times, self.max_gap),
+        )
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """This frame stack with only ``kept``'s **columns** — the leaf of the ``where`` pushdown.
+
+        Sound because a ``(T, N, 3)`` float array has no per-member partiality to lose: the only
+        way one of these carriers is Unresolvable is its sampling, its frame-count mismatch, or
+        its (single, shared) frame being ungrounded — none of which a column selection can change.
+        The one exception is the last: an ungrounded frame bites only when *some* point is built,
+        so narrowing to keys that are never present could turn that ``Unresolvable`` into empty
+        clouds. This declines in that case and lets the full decide report it, as it does today.
+        """
+        if isinstance(_world_anchor(self.frame), Unresolvable):
+            return None
+        columns = [ni for ni, key in enumerate(self.member_keys) if key in kept]
+        return replace(
+            self,
+            frames=self.frames[:, columns, :],
+            member_keys=tuple(self.member_keys[ni] for ni in columns),
+            present=None if self.present is None else self.present[:, columns],
+        )
 
     def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
         """Resample onto ``onto`` and resolve to a dense ``(T, N, 3)`` array + ``(T, N)`` present mask.
@@ -624,7 +731,7 @@ class _WherePoint3BundleSignal(Point3BundleSignal):
     keep: tuple[Hashable, ...] | Roster
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
-        return decide_where_over_time(self.source, self.keep)
+        return decide_where_over_time(self.source, self.keep, narrow=self.source._narrowed_to)
 
 
 @dataclass(frozen=True, eq=False)
@@ -646,6 +753,11 @@ class _ResampledPoint3BundleSignal(Point3BundleSignal):
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
         return decide_resampled(self.source, self.onto)
 
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """Narrowed by pushing into the source: re-timing never reads a key, so the two commute."""
+        narrowed_source = self.source._narrowed_to(kept)
+        return None if narrowed_source is None else replace(self, source=narrowed_source)
+
 
 @dataclass(frozen=True, eq=False)
 class _ReparameterizedPoint3BundleSignal(Point3BundleSignal):
@@ -657,6 +769,11 @@ class _ReparameterizedPoint3BundleSignal(Point3BundleSignal):
             return decide_warped(self.source, self.by)
         return decide_reparameterized(self.source, self.by)
 
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """Narrowed by pushing into the source: warping the time base never reads a key, so the two commute."""
+        narrowed_source = self.source._narrowed_to(kept)
+        return None if narrowed_source is None else replace(self, source=narrowed_source)
+
 
 @dataclass(frozen=True, eq=False)
 class _RestrictedPoint3BundleSignal(Point3BundleSignal):
@@ -665,6 +782,11 @@ class _RestrictedPoint3BundleSignal(Point3BundleSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
         return decide_restricted(self.source, self.to)
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """Narrowed by pushing into the source: clipping the support never reads a key, so the two commute."""
+        narrowed_source = self.source._narrowed_to(kept)
+        return None if narrowed_source is None else replace(self, source=narrowed_source)
 
 
 class _TransformBundleBlend:

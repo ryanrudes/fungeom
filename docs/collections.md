@@ -362,6 +362,38 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
   roadmap (the retarget seam is too central to omit) but not built until pulled —
   **now pulled and built (2026-06-25)**, as `retarget` reaches for the seam.
   `RosterMap` carries *identity only*; the geometric transfer stays parked numerics.
+- **`where` on a collection-over-time narrows the *work*, by pushdown — not only the
+  answer (2026-08-14).** The obvious reading of "restricting is not a rebuild" is to
+  decide the source and drop keys from each sample, and that is still the fallback and
+  still what defines the meaning. But it makes a selection of k of N markers cost N: the
+  reported case built 1.7M `Point3`s (the whole 6,074-point cloud at all 281 frames) to
+  fit a plane to 2,064 of them at *one* instant, and `where` saved 1%. So a source may
+  implement `_narrowed_to(kept)` and return an equivalent signal that materializes only
+  those keys — the array-backed carrier narrows by column, and `restrict` / `resample` /
+  `reparameterize` push into their own source, because a time op never reads a key.
+  Two rules keep it honest, and both are load-bearing:
+  **(a)** a node **declines** (returns `None`) whenever a key it would drop could carry
+  partiality of its own — a dropped key must never turn an `Unresolvable` into a value.
+  That is why the point-cloud carrier narrows (a `(T, N, 3)` float array has no per-member
+  partiality) and the *pose-set* carrier does not (a member `Transform` can be
+  Unresolvable, and narrowing past it would silently repair the signal).
+  **(b)** the pushdown is **skipped when the source is already decided**: narrowing beats
+  deciding in full, but never beats reading a decision that has been made.
+  This is an evaluation strategy, not a semantics — the two paths must agree sample for
+  sample, `Unresolvable`s and reasons included, and `tests/cross_cutting/test_entity_narrowing.py`
+  pins that by counting materialized points rather than by timing anything.
+- **The per-point object layer is off the frame-stack path (2026-08-14).** A cloud carrier
+  world-anchors its whole `(T, N, 3)` stack with **one** transform and materializes each
+  frame through the bulk `as_point3_block` (one copy, one freeze, rows as views), instead
+  of building a `Point3` resolver per point per frame and deciding it. The anchoring is
+  written as a sum of the rotation's scaled columns rather than `block @ rotation.T`
+  *deliberately*: only that spelling is bit-identical to the per-point `rotation @ p + t`
+  it replaced (BLAS reassociates, which moved coordinates ~4e-13 relative), and the
+  fidelity costs ~17 ms where the old path cost 27 s. Note this is **not** the
+  struct-of-arrays `BundleValue` this document's *Value representation* section still
+  describes as the target; `members` remains a dict of `Point3Value`, and that dict is now
+  the floor on the cost. Closing the rest of the gap to numpy means changing the *value*,
+  which is a real design change and not one made under a performance report.
 
 **Status:** spine + **phases 1–3 complete, and rung 3 (phase R) built.** Phases 1–2: all five bundle facades
 (`Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3`) — generic `Bundle[V]` core +

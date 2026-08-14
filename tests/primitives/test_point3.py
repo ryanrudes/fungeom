@@ -207,3 +207,28 @@ def test_point_value_world_requires_grounded_frame() -> None:
     ungrounded = Point3Value.of(0, 0, 0, frame=CoordinateFrame.detached("loose"))
     with pytest.raises(ValueError):
         ungrounded.world()
+
+
+def test_point_block_builds_a_cloud_from_one_frozen_buffer() -> None:
+    """``as_point3_block`` is the bulk constructor a ``(T, N, 3)`` frame stack materializes through.
+
+    It must give away exactly what per-row construction would — world-frame values over a
+    read-only, un-aliased buffer — while paying for the copy and the freeze once.
+    """
+    from fungeom.primitives.point3.value import as_point3_block
+
+    source = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    points = as_point3_block(source)
+
+    assert [tuple(point.coord) for point in points] == [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]
+    assert all(point.frame is WORLD_FRAME for point in points)
+    # Same guarantees Point3Value.__post_init__ gives, taken once for the block.
+    source[0, 0] = 99.0  # the caller's buffer is not aliased into the values
+    assert points[0].coord[0] == 1.0
+    with pytest.raises(ValueError):
+        points[0].coord[0] = 99.0  # and no row can be written through
+
+    with pytest.raises(ValueError, match=r"\(N, 3\) block"):
+        as_point3_block(np.zeros((2, 4)))
+    with pytest.raises(ValueError, match=r"\(N, 3\) block"):
+        as_point3_block(np.zeros(3))

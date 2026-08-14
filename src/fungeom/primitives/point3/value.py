@@ -68,3 +68,32 @@ class Point3Value:
     def __repr__(self) -> str:
         x, y, z = self.coord
         return f"Point3Value([{x:g}, {y:g}, {z:g}], frame={self.frame.name!r})"
+
+
+def as_point3_block(coords: np.ndarray) -> tuple[Point3Value, ...]:
+    """The rows of an ``(N, 3)`` array as **world-frame** point values — the bulk constructor.
+
+    The vectorized counterpart of :meth:`Point3Value.of`, for the one shape that dominates a
+    cloud: N positions already anchored in the world frame. It takes **one** copy and **one**
+    :func:`~fungeom.core.arrays.freeze` for the whole block rather than one of each per row,
+    which is what keeps a ``(T, N, 3)`` frame stack off the per-point coercion path — the
+    per-row work is a view into the frozen block, not a fresh three-element array.
+
+    The immutability guarantee is exactly :meth:`Point3Value.__post_init__`'s, taken once
+    instead of row by row: the block is copied here, so a caller never aliases its own buffer
+    into the values, and it is frozen before any view of it escapes, so no row can be written
+    through. Raises ``ValueError`` if ``coords`` is not ``(N, 3)``.
+    """
+    block = np.array(coords, dtype=np.float64)  # copy; callers never alias into the values
+    if block.ndim != 2 or block.shape[1] != 3:
+        raise ValueError(f"Expected an (N, 3) block of 3D vectors, got shape {block.shape}.")
+    freeze(block)
+    points: list[Point3Value] = []
+    for row in block:
+        point = Point3Value.__new__(Point3Value)
+        # The row is already canonical (float64, shape (3,)) and already read-only, so the
+        # coercion __post_init__ would redo is skipped deliberately — the block paid for it.
+        object.__setattr__(point, "coord", row)
+        object.__setattr__(point, "frame", WORLD_FRAME)
+        points.append(point)
+    return tuple(points)

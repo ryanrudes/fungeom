@@ -173,14 +173,21 @@ def decide_where[V](source: Bundle[V], keep: tuple[Hashable, ...] | Roster) -> R
 
 
 def decide_member_at[V](bundle: Bundle[V], key: Hashable) -> Resolvability[V]:
-    """The member of ``bundle`` at ``key`` — Unresolvable if absent or not in the roster."""
+    """The member of ``bundle`` at ``key`` — Unresolvable if absent or not in the roster.
+
+    Present keys answer from the members dict alone. The roster is an ordered *tuple*, so asking
+    it about membership is a linear scan, and this is the per-key read every bundle-wide map runs:
+    charting a 2,000-point cloud once per frame would spend the scan 2,000 times a frame for
+    nothing. Which of the two reasons a *missing* key gets still needs the roster, so the scan
+    happens on that path only — where it is one lookup, not N of them.
+    """
     match bundle.decide():
         case Resolvable(collection):
+            if collection.present(key):
+                return Resolvable(collection.at(key))
             if key not in collection.roster:
                 return Unresolvable(f"key {key!r} is not in the bundle's roster")
-            if not collection.present(key):
-                return Unresolvable(f"key {key!r} is absent from the bundle")
-            return Resolvable(collection.at(key))
+            return Unresolvable(f"key {key!r} is absent from the bundle")
         case Unresolvable() as bad:
             return bad
     raise AssertionError("unreachable")  # pragma: no cover
