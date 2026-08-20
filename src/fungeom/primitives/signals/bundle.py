@@ -133,13 +133,13 @@ def _world_anchor(frame: CoordinateFrame | Frame) -> Resolvability[RigidTransfor
 def _anchored(block: np.ndarray, anchor: RigidTransform) -> np.ndarray:
     """A ``(T, N, 3)`` stack of local coordinates carried into the world frame, in one pass.
 
-    The batched form of ``RigidTransform.apply_point`` — and deliberately written as the sum of
-    the rotation's scaled *columns* rather than as ``block @ rotation.T``, because that spelling
-    is **bit-identical** to the per-point ``rotation @ p + translation`` it replaces while a
-    matrix-multiply is not: BLAS is free to reassociate, which moved results by up to ~4e-13
-    relative in testing. A performance change that quietly perturbs the last bits of every
-    coordinate is not the change this is meant to be, and the fidelity costs ~17 ms on a stack
-    where the old path cost 27 s.
+    The batched form of ``RigidTransform.apply_point``, and **bit-identical to it by construction**:
+    both are the one :func:`~fungeom.core.arrays.dot3` expression, differing only in what they
+    broadcast over. It used to be written as the sum of the rotation's scaled columns and *compared*
+    against a per-point path that still went through ``@`` — which agreed only on architectures
+    where BLAS's gemv happened to associate the same way, and did not on x86-64. Matching a
+    hand-written sum against a BLAS call is a coincidence to be tested for; sharing the expression
+    is a property. The fidelity costs ~17 ms on a stack where the per-point path cost 27 s.
     """
     rotation, translation = anchor.matrix[:3, :3], anchor.matrix[:3, 3]
     return dot3(rotation, block[..., None, :]) + translation

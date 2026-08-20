@@ -120,6 +120,28 @@ All notable changes to fungeom are documented here. The format follows
 
 ### Fixed
 
+- **Bit-exactness was architecture-dependent, and the test asserting it had been failing on
+  x86-64 all along.** A small fixed-size product reaches BLAS three different ways —
+  `np.dot(u, v)`, `matrix @ vector`, `block @ matrix.T` — and BLAS associates each as its kernel
+  and the host architecture prefer, so they can disagree in the last bit. On arm64 macOS they
+  coincide; on x86-64 Linux they do not. `002e9e7` chose scaled column sums for the batched
+  anchoring *deliberately*, but compared them against a per-point path still going through `@`,
+  so the pair agreed only where gemv happened to associate the same way. Its bit-exactness test
+  had failed on Linux since the day it was written; nobody saw it because that branch was never
+  pushed and CI is x86-64 only.
+
+  `dot2` / `dot3` / `norm3` in `fungeom.core.arrays` now fix the order — one written expression,
+  broadcasting over any leading axes, called by the per-item path and its batched twin alike, so
+  the two cannot disagree on any platform. Converted: `RigidTransform.apply_point` /
+  `apply_vector`, `PlaneValue.to_local` / `signed_distance`, `FaceValue.clearance`,
+  `Region2Value._on_segment` / `_closest_on_segment` / `nearest_boundary_point`, the batched
+  stack anchoring, and every `_block` twin. Single-vector normalizations and `approx_equal`
+  comparisons stay on BLAS — they have no batched twin to agree with.
+
+  **This moves values by up to ~1 ulp on x86-64** relative to 0.7.0 (none on arm64), which is the
+  deliberate price: a graph should resolve to a value, not to a value that depends on where it was
+  resolved.
+
 - **A cloud authored in a non-world `frame` read back unanchored.** `Point3BundleSignal`
   world-anchors its stack at build, but the dense `resolve_over` shortcut returned the *stored*
   frame-local coordinates — so a cloud in a frame 5 units above a patch reported a clearance of

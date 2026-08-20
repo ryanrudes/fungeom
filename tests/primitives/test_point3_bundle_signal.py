@@ -389,8 +389,12 @@ def test_the_batched_anchoring_is_bit_identical_to_per_point_anchoring() -> None
     frame's transform, which is one transform for the entire stack. Hoisting it is a performance
     change, and a performance change that perturbs coordinates is a different change: this
     re-derives the answer with the *old* per-point spelling, written out here rather than
-    imported, and demands exact equality — not ``allclose``. (``block @ rotation.T`` would fail
-    this; BLAS reassociates. The carrier sums the rotation's scaled columns instead.)
+    imported, and demands exact equality — not ``allclose``.
+
+    This test failed on x86-64 for as long as it existed and nobody saw it, because the branch it
+    was written on was never pushed and every local run was arm64. Any spelling that reaches BLAS
+    fails it on some platform; the carrier and ``apply_point`` now share one ``dot3`` expression,
+    which is what makes exact equality a property rather than a coincidence.
     """
     from fungeom.primitives.transform.value import RigidTransform
 

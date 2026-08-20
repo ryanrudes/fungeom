@@ -385,11 +385,14 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
 - **The per-point object layer is off the frame-stack path (2026-08-14).** A cloud carrier
   world-anchors its whole `(T, N, 3)` stack with **one** transform and materializes each
   frame through the bulk `as_point3_block` (one copy, one freeze, rows as views), instead
-  of building a `Point3` resolver per point per frame and deciding it. The anchoring is
-  written as a sum of the rotation's scaled columns rather than `block @ rotation.T`
-  *deliberately*: only that spelling is bit-identical to the per-point `rotation @ p + t`
-  it replaced (BLAS reassociates, which moved coordinates ~4e-13 relative), and the
-  fidelity costs ~17 ms where the old path cost 27 s. Note this is **not** the
+  of building a `Point3` resolver per point per frame and deciding it. The anchoring keeps
+  the per-point coordinates *exactly*, which costs ~17 ms where the old path cost 27 s.
+  (**Superseded 2026-08-20:** this originally read that summing the rotation's scaled
+  columns was bit-identical to the per-point `rotation @ p + t` while `block @ rotation.T`
+  was not. That was true only on the machine it was written on — the per-point side still
+  went through BLAS, so the two agreed only where gemv associated the same way, and the
+  test asserting it failed on x86-64 from the day it was written. Both sides now share one
+  `dot3` expression; see the summation-order entry below.) Note this is **not** the
   struct-of-arrays `BundleValue` this document's *Value representation* section still
   describes as the target; `members` remains a dict of `Point3Value`, and that dict is now
   the floor on the cost. Closing the rest of the gap to numpy means changing the *value*,
@@ -432,6 +435,22 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
   was wrong — asserted from the shape of the numbers rather than a profile, which put two-thirds of
   it somewhere else entirely. It is the floor now. It is still not a change to make under a
   performance report.
+- **The summation order is fungeom's, not BLAS's (2026-08-20).** A small fixed-size product has
+  three routes into BLAS — `np.dot` on two 3-vectors, `matrix @ vector`, `block @ matrix.T` — and
+  BLAS may associate each differently per kernel and per architecture, so the three can return
+  three different last bits for the same quantity. *Which* of them agree is platform-dependent:
+  they coincide on arm64 macOS and diverge on x86-64 Linux. Every bit-exactness claim in this log
+  was therefore only ever verified on one architecture, and the `002e9e7` anchoring test failed on
+  Linux from the day it was written — invisible because that branch was never pushed and CI is
+  x86-64 only. `dot2` / `dot3` / `norm3` in `core.arrays` now fix the order: one written expression,
+  broadcasting over any leading axes, called by the per-item path and its batched twin alike. They
+  cannot disagree — not because a machine was found on which they were equal, but because they
+  evaluate the same operations in the same order. **The general rule this leaves behind:** a scalar
+  method and its `_block` twin must *share* the expression, never merely be tested equal on the
+  machine at hand; "we compared them and they matched" is a statement about a laptop, not about the
+  library. Cost: values move up to ~1 ulp on platforms where BLAS was reassociating (none on
+  arm64). Taken deliberately — a graph should resolve to a value, not to a value that depends on
+  where it was resolved.
 - **`resolve_over` was unified onto that same kernel, and this moved values (2026-08-20).**
   It previously inverse-transported the query into the static patch's frame and split the
   distance via a GEOS lateral term — mathematically equal to the per-instant path but a
