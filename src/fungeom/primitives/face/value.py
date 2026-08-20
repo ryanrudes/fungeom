@@ -14,6 +14,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from fungeom.core.arrays import norm3
+
 from collections.abc import Hashable
 
 from scipy.spatial.transform import Rotation
@@ -52,7 +54,7 @@ class FaceValue:
 
     def clearance(self, p: Float3) -> float:
         """The 3-D distance from ``p`` to the nearest point of the bounded patch (raises if empty)."""
-        return float(np.linalg.norm(as_vec3(p) - self.closest_point(p)))
+        return float(norm3(as_vec3(p) - self.closest_point(p)))
 
     def closest_point_block(self, points: np.ndarray) -> np.ndarray:
         """:meth:`closest_point` for a ``(M, 3)`` block of world points at once (→ ``(M, 3)``).
@@ -73,7 +75,7 @@ class FaceValue:
 
         Bit-identical to calling :meth:`clearance` per row; see :meth:`closest_point_block`.
         """
-        distances: np.ndarray = np.linalg.norm(points - self.closest_point_block(points), axis=-1)
+        distances: np.ndarray = norm3(points - self.closest_point_block(points))
         return distances
 
     def contains(self, p: Float3) -> bool:

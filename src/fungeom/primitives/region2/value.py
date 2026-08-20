@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fungeom.core.arrays import freeze
+from fungeom.core.arrays import dot2, freeze
 from fungeom.primitives.vec2.value import Float2, as_vec2
 
 type Ring = np.ndarray
@@ -54,15 +54,15 @@ def _on_segment(a: Float2, b: Float2, p: Float2, tol: float) -> bool:
     length = float(np.hypot(*ab))  # rings never have zero-length edges (distinct vertices enforced)
     if abs(cross) / length > tol:
         return False
-    t = float(np.dot(ap, ab)) / (length * length)
+    t = float(dot2(ap, ab)) / (length * length)
     return -tol <= t <= 1.0 + tol
 
 
 def _closest_on_segment(a: Float2, b: Float2, p: Float2) -> Float2:
     """The point on the closed segment ``a``–``b`` nearest to ``p`` (parameter clamped to [0, 1])."""
     ab = b - a
-    denom = float(np.dot(ab, ab))  # rings never have zero-length edges (distinct vertices enforced)
-    t = float(np.clip(np.dot(p - a, ab) / denom, 0.0, 1.0))
+    denom = float(dot2(ab, ab))  # rings never have zero-length edges (distinct vertices enforced)
+    t = float(np.clip(dot2(p - a, ab) / denom, 0.0, 1.0))
     return a + t * ab
 
 
@@ -104,7 +104,7 @@ def points_in_rings(rings: Sequence[Ring], uv: np.ndarray, tol: float = 1e-9) ->
             apx, apy = u - a[0], v - a[1]
             cross = abx * apy - aby * apx
             length = float(np.hypot(abx, aby))  # rings never have zero-length edges
-            t = (apx * abx + apy * aby) / (length * length)
+            t = (apx * abx + apy * aby) / (length * length)  # dot2, written out on the split axes
             on_boundary |= (np.abs(cross) / length <= tol) & (t >= -tol) & (t <= 1.0 + tol)
             crosses = (a[1] > v) != (b[1] > v)
             with np.errstate(divide="ignore", invalid="ignore"):
@@ -125,10 +125,11 @@ def nearest_on_rings(rings: Sequence[Ring], uv: np.ndarray) -> np.ndarray:
     candidates = np.empty((len(segments),) + uv.shape)
     for k, (a, b) in enumerate(segments):
         ab = b - a
-        denom = float(np.dot(ab, ab))  # rings never have zero-length edges
-        t = np.clip(((uv - a) @ ab) / denom, 0.0, 1.0)
+        denom = float(dot2(ab, ab))  # rings never have zero-length edges
+        t = np.clip(dot2(uv - a, ab) / denom, 0.0, 1.0)
         candidates[k] = a + t[:, None] * ab
-    nearest = np.argmin(np.sum((candidates - uv[None]) ** 2, axis=-1), axis=0)
+    offsets = candidates - uv[None]
+    nearest = np.argmin(dot2(offsets, offsets), axis=0)
     picked: np.ndarray = candidates[nearest, np.arange(uv.shape[0])]
     return picked
 
@@ -240,7 +241,7 @@ class Region2Value:
             n = len(ring)
             for i in range(n):
                 candidate = _closest_on_segment(ring[i], ring[(i + 1) % n], query)
-                sq = float(np.sum((candidate - query) ** 2))
+                sq = float(dot2(candidate - query, candidate - query))
                 if sq < best_sq:
                     best_sq, best_point = sq, candidate
         return as_vec2(best_point)

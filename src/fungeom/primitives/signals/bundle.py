@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, overload
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from fungeom.core.arrays import ArrayLike
+from fungeom.core.arrays import ArrayLike, dot3
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
 from fungeom.primitives.bundle.resolvers.base import kept_keys, narrowed, renamed
@@ -142,12 +142,7 @@ def _anchored(block: np.ndarray, anchor: RigidTransform) -> np.ndarray:
     where the old path cost 27 s.
     """
     rotation, translation = anchor.matrix[:3, :3], anchor.matrix[:3, 3]
-    return (
-        block[..., 0:1] * rotation[:, 0]
-        + block[..., 1:2] * rotation[:, 1]
-        + block[..., 2:3] * rotation[:, 2]
-        + translation
-    )
+    return dot3(rotation, block[..., None, :]) + translation
 
 
 def _distributed_support(present: list[int], times: TimeSeries, base: CoverageValue) -> CoverageValue:
@@ -1590,7 +1585,7 @@ def _plane_signed_distance_block(plane: PlaneValue, points: np.ndarray) -> Resol
     Bit-identical to :meth:`PlaneValue.signed_distance` per point: a length-3 matrix-vector product
     sums in the same order as the scalar dot it replaces.
     """
-    distances: np.ndarray = (points - plane.point) @ plane.normal
+    distances: np.ndarray = dot3(plane.normal, points - plane.point)
     return Resolvable(distances)
 
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fungeom.core.arrays import freeze
+from fungeom.core.arrays import dot3, freeze
 from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.vec2.value import Float2, as_vec2
 from fungeom.primitives.vec3.value import Float3, as_vec3
@@ -45,7 +45,7 @@ class PlaneValue:
 
     def signed_distance(self, p: Float3) -> float:
         """Signed distance from ``p`` to the plane (positive on the ``normal`` side)."""
-        return float(np.dot(self.normal, as_vec3(p) - self.point))
+        return float(dot3(self.normal, as_vec3(p) - self.point))
 
     def project(self, p: Float3) -> Float3:
         """The orthogonal projection of ``p`` onto the plane."""
@@ -83,7 +83,7 @@ class PlaneValue:
         """The 2D coordinates of ``p`` in the plane's chart (orthogonally projected in-plane)."""
         x, y = self.local_axes()
         d = as_vec3(p) - self.point
-        return as_vec2((float(np.dot(d, x)), float(np.dot(d, y))))
+        return as_vec2((float(dot3(d, x)), float(dot3(d, y))))
 
     def embed(self, uv: Float2) -> Float3:
         """The world point at chart coordinates ``uv`` — the inverse of :meth:`to_local` on the plane."""
@@ -94,12 +94,12 @@ class PlaneValue:
     def to_local_block(self, points: np.ndarray) -> np.ndarray:
         """:meth:`to_local` for a ``(M, 3)`` block of world points at once (→ ``(M, 2)`` chart coords).
 
-        Bit-identical to calling :meth:`to_local` per row: a matrix-vector product against a
-        length-3 axis sums in the same order as the scalar ``np.dot`` it replaces.
+        Bit-identical to calling :meth:`to_local` per row — literally the same
+        :func:`~fungeom.core.arrays.dot3` expression, broadcast over the leading axis.
         """
         x, y = self.local_axes()
         d = points - self.point
-        return np.stack([d @ x, d @ y], axis=-1)
+        return np.stack([dot3(d, x), dot3(d, y)], axis=-1)
 
     def embed_block(self, uv: np.ndarray) -> np.ndarray:
         """:meth:`embed` for a ``(M, 2)`` block of chart coordinates at once (→ ``(M, 3)`` world points).
