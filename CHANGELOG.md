@@ -5,7 +5,7 @@ All notable changes to fungeom are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is derived from git tags
 (`vX.Y.Z`); see [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.8.0] - 2026-08-20
 
 ### Added
 
@@ -99,17 +99,6 @@ All notable changes to fungeom are documented here. The format follows
   reading — what every consumer uses — old and new agree exactly. Re-fuse them only if a patch ever
   needs to be read with its cloud's kernel.
 
-- **A cloud authored in a non-world `frame` read back unanchored.** `Point3BundleSignal`
-  world-anchors its stack at build, but the dense `resolve_over` shortcut returned the *stored*
-  frame-local coordinates — so a cloud in a frame 5 units above a patch reported a clearance of
-  `0.0` rather than `5.0`, while `decide()` reported it correctly. Present since the vectorized
-  readback landed (0.5.0), and it survived this long because the fast path is only taken for a
-  dense carrier and every test of it used the default world frame. The shortcut now anchors the
-  stack before interpolating — anchor-then-lerp, which is also what keeps it bit-identical to the
-  generic path — and defers to that path for an ungrounded frame. Found while unifying the
-  clearance kernels: making `decide()` share the readback promoted this from a `resolve_over`-only
-  wrong answer to a wrong decided value, which is how it finally showed up.
-
 - **`FaceSignal.clearance`'s eager readback now runs the same kernel as its decided value**, and its
   results moved by ≤ 1.8e-15. Since 0.2.2 `resolve_over` inverse-transported the query into the
   static patch frame and split the distance into an out-of-plane height plus a batched GEOS
@@ -128,6 +117,19 @@ All notable changes to fungeom are documented here. The format follows
   samples: for two members that cross, `sig.min().at(0.5)` is `0.0` while the rewrite yields `5.0`.
   The two coincide only when the target grid *is* the source's knots.
   `tests/cross_cutting/test_batched_lifts.py` pins the distinction.
+
+### Fixed
+
+- **A cloud authored in a non-world `frame` read back unanchored.** `Point3BundleSignal`
+  world-anchors its stack at build, but the dense `resolve_over` shortcut returned the *stored*
+  frame-local coordinates — so a cloud in a frame 5 units above a patch reported a clearance of
+  `0.0` rather than `5.0`, while `decide()` reported it correctly. Present since the vectorized
+  readback landed (0.5.0), and it survived this long because the fast path is only taken for a
+  dense carrier and every test of it used the default world frame. The shortcut now anchors the
+  stack before interpolating — anchor-then-lerp, which is also what keeps it bit-identical to the
+  generic path — and defers to that path for an ungrounded frame. Found while unifying the
+  clearance kernels: making `decide()` share the readback promoted this from a `resolve_over`-only
+  wrong answer to a wrong decided value, which is how it finally showed up.
 
 ### Performance
 
