@@ -802,6 +802,40 @@ class _WherePoint3BundleSignal(Point3BundleSignal):
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
         return decide_where_over_time(self.source, self.keep, narrow=self.source._narrowed_to)
 
+    def _pushed_down(self) -> Point3BundleSignal | None:
+        """The equivalent signal carrying only the kept keys, or ``None`` if the source cannot build one.
+
+        The same pushdown :func:`decide_where_over_time` performs, hoisted so the *readbacks* can
+        take it too. Without this a narrowed cloud pays for the whole cloud everywhere except
+        ``decide``: its index and its dense grid both fall through to the generic path, which
+        materializes the full collection and then discards most of it — measured downstream at
+        narrowing to 38% of a cloud buying 3%, while the same cloud built dense ran 2.4× faster.
+
+        Memoized, because narrowing copies the frame stack's kept columns and both readbacks want
+        the result. Unlike :func:`decide_where_over_time` this does **not** skip the pushdown when
+        the source is already decided: reading a memoized decision beats *re-deciding*, but these
+        callers do not want a decision at all — a dense carrier answers its index without touching
+        a coordinate, which is cheaper than any series that has already been built.
+        """
+        # Boxed in a 1-tuple so an absent memo is distinguishable from a computed ``None``
+        # (the source declining to narrow), without a sentinel or a cast.
+        cached: tuple[Point3BundleSignal | None] | None = getattr(self, "_narrowed_signal", None)
+        if cached is None:
+            decided_keep = kept_keys(self.keep)
+            cached = (None if isinstance(decided_keep, Unresolvable) else self.source._narrowed_to(decided_keep.value),)
+            object.__setattr__(self, "_narrowed_signal", cached)
+        return cached[0]
+
+    def _sample_index(self) -> Resolvability[tuple[TimeSeries, CoverageValue, tuple[Hashable, ...]]]:
+        """The narrowed carrier's index — the kept columns' own, never the whole cloud's."""
+        narrowed_signal = self._pushed_down()
+        return super()._sample_index() if narrowed_signal is None else narrowed_signal._sample_index()
+
+    def _decided_grid(self, onto: Sampling) -> Resolvability[tuple[np.ndarray, np.ndarray]]:
+        """The narrowed carrier's dense readback, so a selection costs the selection."""
+        narrowed_signal = self._pushed_down()
+        return super()._decided_grid(onto) if narrowed_signal is None else narrowed_signal._decided_grid(onto)
+
 
 @dataclass(frozen=True, eq=False)
 class _RelabeledPoint3BundleSignal(Point3BundleSignal):
