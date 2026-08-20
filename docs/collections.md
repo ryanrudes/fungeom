@@ -394,6 +394,60 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
   describes as the target; `members` remains a dict of `Point3Value`, and that dict is now
   the floor on the cost. Closing the rest of the gap to numpy means changing the *value*,
   which is a real design change and not one made under a performance report.
+- **A cloud measured against a carrier answers a whole frame at once — and the fold was
+  never the cost (2026-08-20).** `FaceSignal.clearance` / `PlaneSignal.signed_distance`
+  over a cloud built one resolver per member per instant, so a *fold* of that field
+  (`clearance(cloud).min()`) cost ~57× reading back the whole unreduced field — asking for
+  less data cost far more. The reduction was **0.5%** of that: the fold merely forces
+  `decide()`, and it was `decide()` that walked the static algebra `T·N` times while a
+  batched kernel sat beside it in `resolve_over`. So the fix is `decide_lifted_block` —
+  `decide_lifted`'s alignment (shared now, via `align_signals`, so the two cannot drift on
+  *which instants* they answer) with the member axis answered in arrays through
+  `FaceValue.clearance_block` / the `_block` twins on `Region2Value` / `PlaneValue`.
+  Fixing it here rather than in the fold's readback is what makes `at(t)`, `key(k)` and
+  every other `decide()` consumer fast too. `min().resolve_over`: 15.3 s → 0.16 s at 1,000 points,
+  **40.8 s → 0.74 s at 6,074** (1.7M point-instants); `at(t)`: 7.0 s → 0.15 s.
+- **The batched twins are spelled for bit-identity, not for speed alone (2026-08-20).**
+  Each `_block` method reproduces its scalar sibling's exact arithmetic — the same cross
+  products and `hypot` edge lengths in the even-odd test, `argmin`'s first-minimum matching
+  the scalar loop's strict `<`, length-3 matrix-vector products that associate as the scalar
+  `np.dot` does. Verified against `002e9e7`: every decided value, all five folds, `at(t)`
+  and off-knot reconstruction are `array_equal`, on a **non-convex** footprint under a
+  moving pose (an identity pose hides reassociation; a convex one hides the clamp).
+- **A signal can be asked for its *index* without materializing its values (2026-08-20).** The
+  batched lift needs three things from the cloud it measures — when it is sampled, where it is
+  defined, which keys it declares — and was getting them by deciding it in full, building 1.7M
+  `Point3Value` objects it never read (two-thirds of the remaining cost; the coordinates come from
+  `_decided_grid` in 64 ms). `_sample_index` is the pushdown for exactly those three, answered by a
+  dense carrier from its own `sampling`. The alignment rule moved down with it, to
+  `aligned_instants`, stated against time bases instead of decided series — that is what lets a lift
+  obey the rule without materializing an operand, while keeping one definition shared with the
+  per-instant `decide_lifted`. **An index is deliberately not a proof of resolvability**: a dense
+  carrier answers it without checking whether its frame is grounded, and that partiality surfaces
+  from the grid readback instead, with the identical reason. Same shape as `_narrowed_to` above —
+  *a node that knows the shape of its answer can report it without computing it.*
+- **Only now is `BundleValue` the floor (2026-08-20).** After the index pushdown, what remains is
+  ~275 ms building the per-frame dicts and ~240 ms walking `support()` over 1.7M keys, against
+  ~250 ms of actual geometry. The earlier claim in this log that the dict was *already* the floor
+  was wrong — asserted from the shape of the numbers rather than a profile, which put two-thirds of
+  it somewhere else entirely. It is the floor now. It is still not a change to make under a
+  performance report.
+- **`resolve_over` was unified onto that same kernel, and this moved values (2026-08-20).**
+  It previously inverse-transported the query into the static patch's frame and split the
+  distance via a GEOS lateral term — mathematically equal to the per-instant path but a
+  *different algorithm*, disagreeing with `at(t)` by ~7e-15 relative under a moving pose
+  while its docstring claimed a match. Both now run `_face_clearance_block`, so the readback
+  and the decided field are the same computation; the cost is that `resolve_over` alone
+  shifted ≤1.8e-15 from `002e9e7`. Chosen deliberately: one algorithm that agrees with
+  itself beats two that agree to within a rounding error.
+- **What a fold means was *not* changed, and the tempting rewrite would have (2026-08-20).**
+  The reported fix was "resolve the fold over the sampling through the bundle's batched
+  readback and reduce in arrays". That is min-of-lerp; `min()` has always meant lerp-of-min
+  — fold at the source's own knots, then reconstruct (`decide_folded`). On two members that
+  cross, `sig.min().at(0.5)` is `0.0` and the rewrite gives `5.0`. It reads as equivalent
+  only when the target grid *is* the source's knots, which is what the report measured.
+  `tests/cross_cutting/test_batched_lifts.py` pins the distinction so it cannot be
+  "optimized" away later.
 
 **Status:** spine + **phases 1–3 complete, and rung 3 (phase R) built.** Phases 1–2: all five bundle facades
 (`Scalar`/`Vec3`/`Direction3`/`Transform`/`Point3`) — generic `Bundle[V]` core +

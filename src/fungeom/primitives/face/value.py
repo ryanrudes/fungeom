@@ -54,6 +54,28 @@ class FaceValue:
         """The 3-D distance from ``p`` to the nearest point of the bounded patch (raises if empty)."""
         return float(np.linalg.norm(as_vec3(p) - self.closest_point(p)))
 
+    def closest_point_block(self, points: np.ndarray) -> np.ndarray:
+        """:meth:`closest_point` for a ``(M, 3)`` block of world points at once (→ ``(M, 3)``).
+
+        The whole block is charted, tested against the footprint, and clamped in three batched
+        passes instead of ``M`` trips through the scalar algebra — the same projection, the same
+        even-odd containment, the same edge clamp, so it is **bit-identical** to calling
+        :meth:`closest_point` per row. This is what lets a marker cloud be measured against a
+        patch at every instant of a take without a Python call per point-instant.
+        """
+        local = self.plane.to_local_block(points)
+        inside = self.region.contains_block(local)
+        clamped = np.where(inside[:, None], local, self.region.nearest_boundary_block(local))
+        return self.plane.embed_block(clamped)
+
+    def clearance_block(self, points: np.ndarray) -> np.ndarray:
+        """:meth:`clearance` for a ``(M, 3)`` block of world points at once (→ ``(M,)``; raises if empty).
+
+        Bit-identical to calling :meth:`clearance` per row; see :meth:`closest_point_block`.
+        """
+        distances: np.ndarray = np.linalg.norm(points - self.closest_point_block(points), axis=-1)
+        return distances
+
     def contains(self, p: Float3) -> bool:
         """Whether ``p`` projects into the patch footprint — the region contains its in-plane projection.
 

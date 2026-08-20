@@ -99,6 +99,90 @@ All notable changes to fungeom are documented here. The format follows
   reading — what every consumer uses — old and new agree exactly. Re-fuse them only if a patch ever
   needs to be read with its cloud's kernel.
 
+- **A cloud authored in a non-world `frame` read back unanchored.** `Point3BundleSignal`
+  world-anchors its stack at build, but the dense `resolve_over` shortcut returned the *stored*
+  frame-local coordinates — so a cloud in a frame 5 units above a patch reported a clearance of
+  `0.0` rather than `5.0`, while `decide()` reported it correctly. Present since the vectorized
+  readback landed (0.5.0), and it survived this long because the fast path is only taken for a
+  dense carrier and every test of it used the default world frame. The shortcut now anchors the
+  stack before interpolating — anchor-then-lerp, which is also what keeps it bit-identical to the
+  generic path — and defers to that path for an ungrounded frame. Found while unifying the
+  clearance kernels: making `decide()` share the readback promoted this from a `resolve_over`-only
+  wrong answer to a wrong decided value, which is how it finally showed up.
+
+- **`FaceSignal.clearance`'s eager readback now runs the same kernel as its decided value**, and its
+  results moved by ≤ 1.8e-15. Since 0.2.2 `resolve_over` inverse-transported the query into the
+  static patch frame and split the distance into an out-of-plane height plus a batched GEOS
+  overhang. That is mathematically equal to the per-instant path but a *different algorithm*, and it
+  disagreed with `at(t)` by ~7e-15 relative under a moving pose while its docstring claimed to match
+  it. Both now run one kernel, so the readback and the decided field are the same computation and
+  agree exactly. Deliberate: one algorithm that agrees with itself beats two that agree to within a
+  rounding error. Values under an identity pose are unchanged. (Removes the internal
+  `_transported_clearance` / `_region_lateral_distance` helpers, and with them `signals/face.py`'s
+  dependency on `shapely`.)
+
+- **No change to what a fold means, recorded because the obvious optimization would have changed
+  it.** `ScalarBundleSignal.min` / `max` / `sum` / `mean` / `count` still fold at the source's own
+  sample instants and then reconstruct — *lerp-of-min*. Reducing the batched readback over a target
+  grid instead is *min-of-lerp*, a different function wherever a target falls between the source's
+  samples: for two members that cross, `sig.min().at(0.5)` is `0.0` while the rewrite yields `5.0`.
+  The two coincide only when the target grid *is* the source's knots.
+  `tests/cross_cutting/test_batched_lifts.py` pins the distinction.
+
+### Performance
+
+- **A cloud measured against a carrier now answers a whole frame at once.**
+  `FaceSignal.clearance(cloud)` and `PlaneSignal.signed_distance(cloud)` built one resolver **per
+  member per instant** when decided, so asking for a *fold* of that field —
+  `clearance(cloud).min()`, strictly less data — cost about **57×** reading the whole unreduced
+  field back. The reduction was never the cost (0.5% of it): the fold simply forces `decide()`, and
+  only `resolve_over` had a batched path beside it.
+
+  The member axis is now answered in arrays, at the `decide()` level rather than in the fold's
+  readback — which is why every consumer of the field got faster, not just folds:
+
+  | 1,000 points × 281 frames | before | after | |
+  | --- | --- | --- | --- |
+  | `clearance(cloud).min().resolve_over(…)` | 15.34 s | 0.16 s | **96×** |
+  | `clearance(cloud).at(t)` | 7.00 s | 0.15 s | **46×** |
+  | the fold, against the unreduced readback | 57× | 1.5× | |
+
+  | 6,074 points × 281 frames (1.7M point-instants) | before | after | |
+  | --- | --- | --- | --- |
+  | `clearance(cloud).min().resolve_over(…)` | 40.78 s | 0.74 s | **55×** |
+  | the fold, against the unreduced readback | 62× | 1.7× | |
+
+  (A fresh signal per measurement, since `decide()` memoizes.) Two independent causes, and the
+  second only became visible once the first was fixed. **The lift no longer decides the cloud at
+  all.** It needs three things from it — when it is sampled, where it is defined, which keys it
+  declares — and was getting them by deciding it in full, which builds a `Point3Value` for every
+  point of every frame: 1.7M objects, two-thirds of the remaining cost, none of them ever read
+  (the coordinates arrive from the dense grid in 64 ms). A cloud is now asked for its **index**
+  via `_sample_index`, which a dense carrier answers from its own `sampling` without touching a
+  coordinate. The alignment rule moved to `aligned_instants`, stated against time bases rather
+  than decided series, so the per-instant `decide_lifted` and the batched lift still cannot drift
+  on *which* instants they answer. An index is deliberately **not** a proof of resolvability: a
+  partiality only the values expose — an ungrounded frame — is reported by the grid readback
+  instead, with the same reason the per-instant path gives.
+
+  What is left is now genuinely the value representation: ~275 ms building the per-frame
+  `BundleValue` dicts and ~240 ms walking `support()` over 1.7M keys in the fold, against ~250 ms
+  of actual geometry. That is the struct-of-arrays floor `docs/collections.md` names, and closing
+  it is a value-type design change — still not one to make under a performance report. New
+  internal `decide_lifted_block` keeps `decide_lifted`'s alignment — factored out as `align_signals`
+  and now shared, so the batched and per-instant lifts cannot drift on *which* instants they answer
+  — and delegates each frame to a batched kernel. New batched value-type methods:
+  `FaceValue.clearance_block` / `closest_point_block`, `Region2Value.contains_block` /
+  `nearest_boundary_block`, `PlaneValue.to_local_block` / `embed_block`; new internal hooks
+  `Point3BundleSignal._sample_index` and `_decided_grid` (the non-raising twin of `resolve_over`).
+
+  **Every one is spelled to be bit-identical to its scalar sibling, not merely close** — the same
+  cross products and `hypot` edge lengths in the even-odd test, `argmin`'s first-minimum matching
+  the scalar loop's strict `<`, length-3 matrix-vector products that associate as the scalar
+  `np.dot` does. Verified against the previous implementation on a **non-convex** footprint under a
+  rotating-and-translating pose (an identity pose hides reassociation; a convex one hides the
+  clamp): decided values, all five folds, `at(t)` and off-knot reconstruction are `array_equal`.
+
 ## [0.7.0] - 2026-08-12
 
 ### Added

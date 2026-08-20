@@ -91,6 +91,24 @@ class PlaneValue:
         u, v = as_vec2(uv)
         return as_vec3(self.point + u * x + v * y)
 
+    def to_local_block(self, points: np.ndarray) -> np.ndarray:
+        """:meth:`to_local` for a ``(M, 3)`` block of world points at once (→ ``(M, 2)`` chart coords).
+
+        Bit-identical to calling :meth:`to_local` per row: a matrix-vector product against a
+        length-3 axis sums in the same order as the scalar ``np.dot`` it replaces.
+        """
+        x, y = self.local_axes()
+        d = points - self.point
+        return np.stack([d @ x, d @ y], axis=-1)
+
+    def embed_block(self, uv: np.ndarray) -> np.ndarray:
+        """:meth:`embed` for a ``(M, 2)`` block of chart coordinates at once (→ ``(M, 3)`` world points).
+
+        Bit-identical to calling :meth:`embed` per row (the same scaled-axis sum, broadcast).
+        """
+        x, y = self.local_axes()
+        return self.point + uv[:, 0:1] * x + uv[:, 1:2] * y
+
     def offset(self, distance: float) -> PlaneValue:
         """A parallel plane shifted ``distance`` along the normal."""
         return PlaneValue(point=as_vec3(self.point + distance * self.normal), normal=self.normal)

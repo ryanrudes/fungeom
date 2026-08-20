@@ -62,6 +62,8 @@ from fungeom.primitives.signals.series import (
     decide_restricted,
     decide_sample,
     decide_warped,
+    decided_grid,
+    aligned_instants,
     dense_grid_brackets,
     dense_grid_readback,
     resolved_grid,
@@ -448,7 +450,37 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         The vectorized cloud readback: columns follow the roster, an occluded cell is ``nan`` with
         a ``False`` mask. Resolves eagerly (raises if a target is off the support).
         """
-        return resolved_grid(self.resample(onto), lambda value: value.coord, np.full(3, np.nan))
+        return self._decided_grid(onto).unwrap()
+
+    def _decided_grid(self, onto: Sampling) -> Resolvability[tuple[np.ndarray, np.ndarray]]:
+        """:meth:`resolve_over` as a decision — the non-raising readback a ``_decide`` may reuse.
+
+        The single place the dense cloud grid is produced, so the eager public readback and the
+        batched lifts below it are the same computation and cannot drift apart. A carrier that
+        stores its samples densely overrides this with a vectorized shortcut.
+        """
+        return decided_grid(self.resample(onto), lambda value: value.coord, np.full(3, np.nan))
+
+    def _sample_index(self) -> Resolvability[tuple[TimeSeries, CoverageValue, tuple[Hashable, ...]]]:
+        """*When* this cloud is sampled, *where* it is defined, and *which* keys it declares.
+
+        The index of the field without its contents. A batched lift needs only these three things
+        from the cloud it measures — the coordinates come from :meth:`_decided_grid` in one numpy
+        pass — yet deciding the cloud to read them off builds a ``Point3Value`` for every point of
+        every frame, which on a real take is millions of objects the lift never looks at. A carrier
+        that already knows its own time base answers this without materializing anything.
+
+        The default is honest rather than cheap: decide, and read the index off the result. A
+        subclass may override *only* if its index is a genuine constant of the carrier. Overriding
+        does **not** have to reproduce every partiality the full decide would report — an index is
+        not a proof of resolvability, and whatever it omits surfaces from :meth:`_decided_grid`,
+        which the lift calls next and which decides through the ordinary path.
+        """
+        decided = self.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        series = decided.value
+        return Resolvable((series.times, series.support, series.values[0].roster))
 
     def fit_plane(self, *, tolerance: float = 1e-6) -> PlaneSignal:
         """The least-squares plane fitted to the cloud at every frame (→ ``PlaneSignal``).
@@ -687,18 +719,48 @@ class _SampledPoint3BundleSignal(Point3BundleSignal):
             present=None if self.present is None else self.present[:, columns],
         )
 
-    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
-        """Resample onto ``onto`` and resolve to a dense ``(T, N, 3)`` array + ``(T, N)`` present mask.
+    def _decided_grid(self, onto: Sampling) -> Resolvability[tuple[np.ndarray, np.ndarray]]:
+        """The dense cloud readback, vectorized (the cloud analog of ``TransformSignal.from_matrices``).
 
-        The vectorized batch carrier (the cloud analog of ``TransformSignal.from_matrices``): reads
-        the stored ``(T, N, 3)`` frame stack back in one batched numpy interpolation, skipping the
-        per-frame ``Point3`` materialization; falls back to the generic per-instant path for any
+        Reads the stored ``(T, N, 3)`` frame stack back in one batched numpy interpolation, skipping
+        the per-frame ``Point3`` materialization; falls back to the generic per-instant path for any
         reconstruction the shortcut does not model.
+
+        **The stack is world-anchored first, exactly as :meth:`_decide` anchors it.** A cloud may be
+        authored in a non-world ``frame``, and its samples are world-anchored at build; reading the
+        raw stored coordinates back would hand out frame-local positions under a world-anchored
+        contract — a silently wrong answer wherever the frame is not the identity. Anchoring *before*
+        the bracket interpolation (rather than after) is also what keeps this bit-identical to the
+        generic path, which lerps values that are already anchored. An ungrounded frame defers to
+        that path, which owns the "ungrounded, but nothing present" case.
         """
-        fast = dense_grid_readback(
-            self.sampling, self.frames, self.present, self.interpolation, self.boundary, self.max_gap, onto
-        )
-        return fast if fast is not None else super().resolve_over(onto)
+        anchor = _world_anchor(self.frame)
+        if isinstance(anchor, Unresolvable):
+            return super()._decided_grid(onto)
+        width = len(self.member_keys)
+        world = _anchored(self.frames[:, :width, :], anchor.value)
+        present = None if self.present is None else self.present[:, :width]
+        fast = dense_grid_readback(self.sampling, world, present, self.interpolation, self.boundary, self.max_gap, onto)
+        return Resolvable(fast) if fast is not None else super()._decided_grid(onto)
+
+    def _sample_index(self) -> Resolvability[tuple[TimeSeries, CoverageValue, tuple[Hashable, ...]]]:
+        """The index straight off the carrier — its own sampling, gap policy and key tuple.
+
+        A dense frame stack *is* its index: the time base is the ``sampling`` it was built with, the
+        support is that base under ``max_gap``, and the roster is ``member_keys``. None of the three
+        depends on a single coordinate, so none of the ``T·N`` points need building. The frame-count
+        check is kept because it decides whether this carrier has a coherent time base at all; the
+        one partiality not repeated here — an ungrounded frame — is caught by ``_decided_grid``,
+        which defers to the per-instant path and reports it identically.
+        """
+        match self.sampling.decide():
+            case Resolvable(base):
+                if self.frames.shape[0] != base.count:
+                    return Unresolvable(f"{self.frames.shape[0]} frames for {base.count} sample times")
+                return Resolvable((base.times, support_from_times(base.times, self.max_gap), self.member_keys))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 @dataclass(frozen=True, eq=False)
@@ -1245,6 +1307,65 @@ def decide_folded[U](
     )
 
 
+def decide_lifted_block[C](
+    carrier: Signal[C],
+    cloud: Point3BundleSignal,
+    block: Callable[[C, np.ndarray], Resolvability[np.ndarray]],
+) -> Resolvability[SampledSeries[BundleValue[float]]]:
+    """:func:`decide_lifted` with the *member* axis batched — a cloud measured against a carrier.
+
+    Identical in meaning to lifting ``carrier.at(t) ⊕ cloud.at(t)`` per instant: the same
+    :func:`aligned_instants` time base and support, the same per-instant carrier value, the same
+    resulting roster and occlusion. What differs is only *how* a frame is computed — the cloud is
+    read back as one dense ``(T, N, 3)`` grid and ``block(value, points)`` answers a whole frame's
+    members in arrays, instead of building N resolvers per instant. That is the difference between
+    a contact field costing one numpy pass per frame and costing ``T·N`` trips through the static
+    algebra, and it is why this exists as a separate helper rather than an optimization inside
+    :func:`decide_lifted`, which cannot know that a member-wise op batches.
+
+    ``block`` returns ``Unresolvable`` for a frame it cannot answer (an empty patch has no surface
+    to measure to), exactly as the per-instant resolver would, so partiality still propagates.
+    Occluded members are ``nan`` in the grid and simply omitted from the frame's bundle.
+    """
+    decided_carrier = carrier.decide()
+    if isinstance(decided_carrier, Unresolvable):
+        return decided_carrier
+    carrier_series = decided_carrier.value
+    shape = cloud._sample_index()  # the cloud's when/where/which — no points materialized
+    if isinstance(shape, Unresolvable):
+        return shape
+    cloud_times, cloud_support, roster = shape.value
+    aligned = aligned_instants(carrier_series.times, carrier_series.support, cloud_times, cloud_support)
+    if isinstance(aligned, Unresolvable):
+        return aligned
+    times, support = aligned.value
+    grid = cloud._decided_grid(Sampling.at_times(times))
+    if isinstance(grid, Unresolvable):
+        # This is where a cloud that cannot be read at all reports it. The index above is
+        # deliberately not a proof of resolvability — a dense carrier answers it from its own
+        # sampling without touching a coordinate — so a partiality that only the values expose
+        # (an ungrounded frame, say) arrives here, from the same per-instant path that would
+        # have raised it, with the same reason.
+        return grid
+    points, mask = grid.value
+    frames: list[BundleValue[float]] = []
+    for index, t in enumerate(times):
+        sampled = carrier_series.sample(t)
+        if isinstance(sampled, Unresolvable):
+            return sampled
+        row = block(sampled.value, points[index])
+        if isinstance(row, Unresolvable):
+            return row
+        values = row.value
+        members = {key: float(values[column]) for column, key in enumerate(roster) if mask[index, column]}
+        frames.append(BundleValue(roster=roster, members=members))
+    return Resolvable(
+        SampledSeries(
+            as_times(times), tuple(frames), Interpolation.linear, Boundary.undefined, SCALAR_BUNDLE_BLEND, support
+        )
+    )
+
+
 def _present_values(frame: BundleValue[float]) -> list[float]:
     return [frame.members[key] for key in frame.support()]
 
@@ -1463,6 +1584,16 @@ class _RestrictedScalarBundleSignal(ScalarBundleSignal):
         return decide_restricted(self.source, self.to)
 
 
+def _plane_signed_distance_block(plane: PlaneValue, points: np.ndarray) -> Resolvability[np.ndarray]:
+    """One frame's signed distances from a ``(N, 3)`` point block to ``plane`` — ``n · (qₖ − p₀)``.
+
+    Bit-identical to :meth:`PlaneValue.signed_distance` per point: a length-3 matrix-vector product
+    sums in the same order as the scalar dot it replaces.
+    """
+    distances: np.ndarray = (points - plane.point) @ plane.normal
+    return Resolvable(distances)
+
+
 @dataclass(frozen=True, eq=False)
 class _PlaneClearanceBundleSignal(ScalarBundleSignal):
     """Per-marker signed distance from a moving cloud to a moving plane — the clearance field over time."""
@@ -1471,9 +1602,7 @@ class _PlaneClearanceBundleSignal(ScalarBundleSignal):
     cloud: Point3BundleSignal
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
-        return decide_lifted(
-            self.plane, self.cloud, lambda t: self.plane.at(t).signed_distance(self.cloud.at(t)), SCALAR_BUNDLE_BLEND
-        )
+        return decide_lifted_block(self.plane, self.cloud, _plane_signed_distance_block)
 
     def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
         """Resample onto ``onto`` and resolve to a dense ``(T, N)`` signed-distance array + present mask.

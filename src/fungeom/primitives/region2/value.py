@@ -82,6 +82,57 @@ def point_in_rings(rings: Sequence[Ring], p: Float2, tol: float = 1e-9) -> bool:
     return inside
 
 
+def points_in_rings(rings: Sequence[Ring], uv: np.ndarray, tol: float = 1e-9) -> np.ndarray:
+    """:func:`point_in_rings` for a whole ``(M, 2)`` block of points at once (→ ``(M,)`` bool).
+
+    The vectorized even-odd test: every edge is swept against all ``M`` points instead of one,
+    which is what lets a cloud be charted against a footprint without a Python call per point.
+    Deliberately spelled to be **bit-identical** to the scalar form — the same cross product, the
+    same ``hypot`` edge length, the same comparisons — so batching cannot move a boundary case.
+    The scalar version short-circuits ``True`` the moment a point lands on an edge; here every
+    edge is evaluated and the boundary hits are or-ed in at the end, which agrees because a
+    boundary point is inside either way.
+    """
+    u, v = uv[:, 0], uv[:, 1]
+    inside = np.zeros(u.shape, dtype=bool)
+    on_boundary = np.zeros(u.shape, dtype=bool)
+    for ring in rings:
+        n = len(ring)
+        for i in range(n):
+            a, b = ring[i], ring[(i + 1) % n]
+            abx, aby = b[0] - a[0], b[1] - a[1]
+            apx, apy = u - a[0], v - a[1]
+            cross = abx * apy - aby * apx
+            length = float(np.hypot(abx, aby))  # rings never have zero-length edges
+            t = (apx * abx + apy * aby) / (length * length)
+            on_boundary |= (np.abs(cross) / length <= tol) & (t >= -tol) & (t <= 1.0 + tol)
+            crosses = (a[1] > v) != (b[1] > v)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                x_cross = a[0] + (v - a[1]) / (b[1] - a[1]) * (b[0] - a[0])  # only read where crosses
+            inside ^= crosses & (u < x_cross)
+    return inside | on_boundary
+
+
+def nearest_on_rings(rings: Sequence[Ring], uv: np.ndarray) -> np.ndarray:
+    """The closest boundary point of ``rings`` for each of a ``(M, 2)`` block (→ ``(M, 2)``).
+
+    The vectorized companion to :meth:`Region2Value.nearest_boundary_point`: every edge's clamped
+    closest point is computed for all ``M`` queries, then the nearest is picked per query.
+    ``argmin`` keeps the *first* minimum, which is the tie-break the scalar loop's strict ``<``
+    makes, so the two agree bit for bit.
+    """
+    segments = [(ring[i], ring[(i + 1) % len(ring)]) for ring in rings for i in range(len(ring))]
+    candidates = np.empty((len(segments),) + uv.shape)
+    for k, (a, b) in enumerate(segments):
+        ab = b - a
+        denom = float(np.dot(ab, ab))  # rings never have zero-length edges
+        t = np.clip(((uv - a) @ ab) / denom, 0.0, 1.0)
+        candidates[k] = a + t[:, None] * ab
+    nearest = np.argmin(np.sum((candidates - uv[None]) ** 2, axis=-1), axis=0)
+    picked: np.ndarray = candidates[nearest, np.arange(uv.shape[0])]
+    return picked
+
+
 def _segments_properly_intersect(a: Float2, b: Float2, c: Float2, d: Float2) -> bool:
     """Whether open segments ``a``–``b`` and ``c``–``d`` cross at an interior point."""
 
@@ -160,6 +211,13 @@ class Region2Value:
         """Whether ``p`` lies in the region (boundary included)."""
         return point_in_rings(self.rings, as_vec2(p), tol)
 
+    def contains_block(self, uv: np.ndarray, tol: float = 1e-9) -> np.ndarray:
+        """:meth:`contains` for a ``(M, 2)`` block of chart points at once (→ ``(M,)`` bool).
+
+        Bit-identical to calling :meth:`contains` per row; see :func:`points_in_rings`.
+        """
+        return points_in_rings(self.rings, uv, tol)
+
     def centroid(self) -> Float2:
         """The area-weighted centroid (raises ``ValueError`` for a zero-area region)."""
         total = sum(ring_signed_area(ring) for ring in self.rings)
@@ -186,6 +244,15 @@ class Region2Value:
                 if sq < best_sq:
                     best_sq, best_point = sq, candidate
         return as_vec2(best_point)
+
+    def nearest_boundary_block(self, uv: np.ndarray) -> np.ndarray:
+        """:meth:`nearest_boundary_point` for a ``(M, 2)`` block at once (→ ``(M, 2)``; raises if empty).
+
+        Bit-identical to calling :meth:`nearest_boundary_point` per row; see :func:`nearest_on_rings`.
+        """
+        if self.is_empty:
+            raise ValueError("an empty region has no boundary")
+        return nearest_on_rings(self.rings, uv)
 
     def signed_distance(self, p: Float2) -> float:
         """Distance to the boundary, **positive inside** and negative outside (raises if empty)."""

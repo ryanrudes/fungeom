@@ -26,9 +26,8 @@ from dataclasses import dataclass
 from typing import overload
 
 import numpy as np
-import shapely
 
-from fungeom.core.resolvability import Resolvability, Resolvable, UnresolvableError, Unresolvable
+from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.value import BundleValue
 from fungeom.primitives.face.decidability import FaceDecision
 from fungeom.primitives.face.resolvers.base import Face
@@ -40,16 +39,14 @@ from fungeom.primitives.point3.value import Point3Value
 from fungeom.primitives.region2.decidability import Region2Decision
 from fungeom.primitives.region2.resolvers.base import Region2
 from fungeom.primitives.region2.resolvers.hull import TolerantBundleHullRegion2
-from fungeom.primitives.region2.shapely_bridge import to_shapely
-from fungeom.primitives.region2.value import Region2Value
 from fungeom.primitives.sampling.resolvers.base import Sampling
 from fungeom.primitives.scalar.resolvers.base import Scalar
 from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.signals.bundle import (
     POINT3_BUNDLE_BLEND,
-    SCALAR_BUNDLE_BLEND,
     Point3BundleSignal,
     ScalarBundleSignal,
+    decide_lifted_block,
 )
 from fungeom.primitives.signals.boolean import BoolSignal
 from fungeom.primitives.signals.plane import PLANE_BLEND, PlaneSignal
@@ -346,40 +343,30 @@ class _FaceSignalBoundary(Point3BundleSignal):
         return values, mask
 
 
-def _region_lateral_distance(region: Region2Value, u: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """The in-plane overhang: each chart point ``(u, v)``'s distance to ``region`` — ``0`` inside the
-    footprint, the distance to its boundary outside — over the whole stack in one batched GEOS call.
+def _faces_over(face_signal: FaceSignal, onto: Sampling) -> list[FaceValue]:
+    """The patch as carried to each of ``onto``'s instants — the readback's per-frame carrier.
 
-    The vectorized sibling of ``FaceValue.closest_point``'s region clamp (``shapely.distance`` is
-    ``0`` for a contained point, exactly the clamp's zero in-plane displacement). Occluded cloud
-    members arrive as ``nan``; they are zeroed for GEOS (kept finite) and re-masked by the caller.
+    Reads the decided patch track at the target instants (raising off-support, the eager readback
+    contract). Works for any patch track, transported or re-hulled per frame, so the batched
+    readbacks below need no special case for either.
     """
-    geom = to_shapely(region)
-    finite = np.isfinite(u) & np.isfinite(v)
-    coords = np.stack([np.where(finite, u, 0.0).ravel(), np.where(finite, v, 0.0).ravel()], axis=-1)
-    return np.asarray(shapely.distance(geom, shapely.points(coords)), dtype=float).reshape(u.shape)
+    series = face_signal.resolve()
+    return [series.sample(float(t)).unwrap() for t in onto.resolve().times]
 
 
-def _transported_clearance(face: FaceValue, poses: np.ndarray, query: np.ndarray) -> np.ndarray:
-    """Bounded clearance from world ``query`` points to the static ``face`` carried by ``poses``, batched.
+def _face_clearance_block(face: FaceValue, points: np.ndarray) -> Resolvability[np.ndarray]:
+    """One frame's bounded clearance from a ``(N, 3)`` point block to ``face`` — Unresolvable if empty.
 
-    Clearance is rigid-invariant, so rather than transport the patch and clamp per instant we
-    inverse-transport each query into the *static* patch's frame (``Rᵀ(q − t)``) and split the
-    distance into the out-of-plane height ``h`` and the in-plane overhang ``lateral`` (orthogonal,
-    so ``√(h² + lateral²)``) against the one fixed footprint. ``query`` is ``(T, M, 3)`` aligned with
-    the ``(T, 4, 4)`` pose stack; returns clearance ``(T, M)``. Matches the per-instant readback at
-    the sample instants (between samples it interpolates the pose, like ``boundary()`` / ``frame()``).
+    The frame-at-a-time kernel every clearance path goes through, per-instant and batched alike.
+    It transports nothing: the patch has *already* been carried to this instant, and the whole
+    block is charted, footprint-tested and clamped against it in three numpy passes. So it is
+    **bit-identical** to ``face.clearance(p)`` per point — the property that lets ``decide()`` and
+    ``resolve_over`` be the same computation rather than two algorithms that agree to within a
+    rounding error.
     """
-    plane = face.plane
-    origin, normal = np.asarray(plane.point), np.asarray(plane.normal)
-    axis_x, axis_y = (np.asarray(axis) for axis in plane.local_axes())
-    rotation, translation = poses[:, :3, :3], poses[:, :3, 3]  # (T, 3, 3), (T, 3)
-    local = np.einsum("tji,tmj->tmi", rotation, query - translation[:, None, :])  # Rᵀ(q − t); (T, M, 3)
-    offset = local - origin
-    height = offset @ normal  # (T, M) — out-of-plane signed height
-    lateral = _region_lateral_distance(face.region, offset @ axis_x, offset @ axis_y)  # (T, M)
-    clearance: np.ndarray = np.sqrt(height * height + lateral * lateral)
-    return clearance
+    if face.region.is_empty:
+        return Unresolvable("the clearance to an empty face is undefined")
+    return Resolvable(face.clearance_block(points))
 
 
 @dataclass(frozen=True, eq=False)
@@ -401,15 +388,12 @@ class _FaceClearanceSignal(ScalarSignal):
         bounded distance in one batched op. Resolves eagerly (raises off-support, or if the patch is
         empty — no surface to measure to).
         """
-        if not isinstance(self.face_signal, _TransportedFaceSignal):
-            # A per-frame patch has no static face to batch against; take the generic path.
-            return super().resolve_over(onto)
-        face = self.face_signal.face.resolve()  # FaceValue; raises if the face is ungrounded
-        if face.region.is_empty:
-            raise UnresolvableError("the clearance to an empty face is undefined")
-        poses = self.face_signal.pose.resolve_over(onto)  # (T, 4, 4)
+        faces = _faces_over(self.face_signal, onto)
         query = self.point.resolve_over(onto)  # (T, 3)
-        return _transported_clearance(face, poses, query[:, None, :])[:, 0]
+        clearance = np.empty(query.shape[0])
+        for index, face in enumerate(faces):
+            clearance[index] = _face_clearance_block(face, query[index][None, :]).unwrap()[0]
+        return clearance
 
 
 @dataclass(frozen=True, eq=False)
@@ -420,30 +404,22 @@ class _FaceClearanceBundleSignal(ScalarBundleSignal):
     cloud: Point3BundleSignal
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
-        return decide_lifted(
-            self.face_signal,
-            self.cloud,
-            lambda t: self.face_signal.at(t).clearance(self.cloud.at(t)),
-            SCALAR_BUNDLE_BLEND,
-        )
+        return decide_lifted_block(self.face_signal, self.cloud, _face_clearance_block)
 
     def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
         """Resample onto ``onto`` and resolve to a dense ``(T, N)`` clearance array + present mask.
 
-        The contact-clearance field, vectorized: the whole moving cloud is inverse-transported into
-        the static patch's frame and its bounded clearance decomposed in one batched op (occluded
-        members stay ``nan`` with a ``False`` mask). Resolves eagerly (raises off-support, or if the
-        patch is empty).
+        The contact-clearance field, vectorized: the patch is carried to each target instant and
+        the whole cloud measured against it in one numpy pass per frame (occluded members stay
+        ``nan`` with a ``False`` mask). The same :func:`_face_clearance_block` the per-instant path
+        uses, so this readback and ``at(t)`` agree bit for bit. Resolves eagerly (raises
+        off-support, or if the patch is empty).
         """
-        if not isinstance(self.face_signal, _TransportedFaceSignal):
-            # A per-frame patch has no static face to batch against; take the generic path.
-            return super().resolve_over(onto)
-        face = self.face_signal.face.resolve()
-        if face.region.is_empty:
-            raise UnresolvableError("the clearance to an empty face is undefined")
-        poses = self.face_signal.pose.resolve_over(onto)  # (T, 4, 4)
+        faces = _faces_over(self.face_signal, onto)
         cloud, mask = self.cloud.resolve_over(onto)  # (T, N, 3), (T, N)
-        clearance = _transported_clearance(face, poses, cloud)  # (T, N)
+        clearance = np.empty(mask.shape)
+        for index, face in enumerate(faces):
+            clearance[index] = _face_clearance_block(face, cloud[index]).unwrap()
         return np.where(mask, clearance, np.nan), mask
 
 
