@@ -504,6 +504,16 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         selection and hulling another is how both get the sample they need, and it is not
         expressible when the two are fused.
 
+        **What that costs when the two are fused, measured.** On a skateboard deck (reported by
+        ``retarget_perfect_data``, the first use of this in anger): the plane fitted on the deck's
+        49-vertex flat core and bounded by the 91-vertex whole top fits to **1.24 mm rms**, while
+        those boundary vertices sit **15.78 mm rms and 38.28 mm worst** off that plane — the
+        kicktails, which are real geometry and belong in the footprint. Fit the plane over all 91
+        instead, as the fused form must, and it comes out **9.94° off horizontal**: the tails lever
+        the surface away from the face the board actually stands on. A patch is then measured
+        against a plane tilted ten degrees from the contact it is meant to detect, which is not a
+        tolerance problem and cannot be tuned away.
+
         **Convex is in the name because it is a modeling choice, not a property of the data.** A
         hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
         concave; this library will not pick that for you behind a neutral name.
@@ -535,7 +545,9 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
 
         Use :meth:`hull_in` instead when the plane should be fitted to a *different* selection than
         the one hulled — the usual case for a real surface, where the flat core that locates the
-        plane is a subset of the outline that bounds it.
+        plane is a subset of the outline that bounds it. Fusing them where they should differ is not
+        a small error: on a real skateboard deck it tilts the fitted plane 9.94° off the face the
+        board stands on (see :meth:`hull_in`).
 
         **Convex is in the name because it is a modeling choice, not a property of the data.** A
         hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
