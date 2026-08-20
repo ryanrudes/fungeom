@@ -7,8 +7,10 @@ own primitive — :meth:`present` (→ ``Bool``), :meth:`count` (→ ``Scalar``)
 :meth:`support` (→ ``Roster``, the rung-3 identity-domain lift of the present keys) —
 plus the value-type-agnostic *decide helpers* (:func:`decide_gathered` /
 :func:`decide_where` / :func:`decide_member_at` / :func:`decide_relabeled`) the per-type
-facades delegate to (the bundle analog of the signal layer's shared ``decide_*``
-helpers). The lower-layer ``Bool`` / ``Scalar`` / ``Roster`` / ``RosterMap`` are imported
+facades delegate to (the bundle analog of the signal layer's shared ``decide_*`` helpers).
+It also carries the value-level :func:`narrowed` / :func:`renamed`, which the *signal* layer
+reuses so that restricting a bundle and restricting a bundle-over-time cannot drift apart.
+The lower-layer ``Bool`` / ``Scalar`` / ``Roster`` / ``RosterMap`` are imported
 normally.
 """
 
@@ -27,6 +29,7 @@ from fungeom.primitives.roster.decidability import RosterDecision
 from fungeom.primitives.roster.resolvers.base import Roster
 from fungeom.primitives.roster.value import RosterValue
 from fungeom.primitives.rostermap.resolvers.base import RosterMap
+from fungeom.primitives.rostermap.value import KeyCorrespondence
 from fungeom.primitives.scalar.decidability import ScalarDecision
 from fungeom.primitives.scalar.resolvers.base import Scalar
 
@@ -112,6 +115,45 @@ def decide_gathered[V](
     return Resolvable(BundleValue(roster=roster, members=decided))
 
 
+def kept_keys(keep: tuple[Hashable, ...] | Roster) -> Resolvability[frozenset[Hashable]]:
+    """The key set ``keep`` names, resolving a deferred :class:`Roster` lazily.
+
+    Split out from :func:`decide_where` so the *signal* layer can narrow a whole cloud-over-time
+    against the same key set without re-deciding the roster once per sample.
+    """
+    if isinstance(keep, Roster):
+        decided = keep.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        return Resolvable(frozenset(decided.value.keys))
+    return Resolvable(frozenset(keep))
+
+
+def narrowed[V](collection: BundleValue[V], kept: frozenset[Hashable]) -> BundleValue[V]:
+    """``collection`` restricted to ``kept`` — roster and support both narrow.
+
+    The value-level core of :func:`decide_where`, shared with the signal layer so that
+    restricting a bundle and restricting a bundle *over time* cannot drift apart.
+    """
+    roster = tuple(key for key in collection.roster if key in kept)
+    members = {key: value for key, value in collection.members.items() if key in kept}
+    return BundleValue(roster=roster, members=members)
+
+
+def renamed[V](collection: BundleValue[V], correspondence: KeyCorrespondence) -> BundleValue[V] | None:
+    """``collection`` re-keyed through ``correspondence``, or ``None`` if two keys collapse.
+
+    ``None`` rather than an exception: the caller turns it into an ``Unresolvable`` carrying a
+    reason, which is the only shape this library reports partiality in.
+    """
+    keys = [key for key in collection.roster if correspondence.maps(key)]
+    images = [correspondence.apply(key) for key in keys]
+    if len(set(images)) != len(images):
+        return None
+    members = {correspondence.apply(key): collection.members[key] for key in keys if key in collection.members}
+    return BundleValue(roster=tuple(images), members=members)
+
+
 def decide_where[V](source: Bundle[V], keep: tuple[Hashable, ...] | Roster) -> Resolvability[BundleValue[V]]:
     """The sub-collection of ``source`` restricted to ``keep`` (roster and support both narrow).
 
@@ -119,32 +161,33 @@ def decide_where[V](source: Bundle[V], keep: tuple[Hashable, ...] | Roster) -> R
     ``values.argmin()`` / ``cloud.nearest_to(p)``) — resolved lazily, so an unresolvable roster
     propagates rather than being forced early.
     """
-    if isinstance(keep, Roster):
-        decided_keep = keep.decide()
-        if isinstance(decided_keep, Unresolvable):
-            return decided_keep
-        kept = set(decided_keep.value.keys)
-    else:
-        kept = set(keep)
+    decided_keep = kept_keys(keep)
+    if isinstance(decided_keep, Unresolvable):
+        return decided_keep
     match source.decide():
         case Resolvable(collection):
-            roster = tuple(key for key in collection.roster if key in kept)
-            members = {key: value for key, value in collection.members.items() if key in kept}
-            return Resolvable(BundleValue(roster=roster, members=members))
+            return Resolvable(narrowed(collection, decided_keep.value))
         case Unresolvable() as bad:
             return bad
     raise AssertionError("unreachable")  # pragma: no cover
 
 
 def decide_member_at[V](bundle: Bundle[V], key: Hashable) -> Resolvability[V]:
-    """The member of ``bundle`` at ``key`` — Unresolvable if absent or not in the roster."""
+    """The member of ``bundle`` at ``key`` — Unresolvable if absent or not in the roster.
+
+    Present keys answer from the members dict alone. The roster is an ordered *tuple*, so asking
+    it about membership is a linear scan, and this is the per-key read every bundle-wide map runs:
+    charting a 2,000-point cloud once per frame would spend the scan 2,000 times a frame for
+    nothing. Which of the two reasons a *missing* key gets still needs the roster, so the scan
+    happens on that path only — where it is one lookup, not N of them.
+    """
     match bundle.decide():
         case Resolvable(collection):
+            if collection.present(key):
+                return Resolvable(collection.at(key))
             if key not in collection.roster:
                 return Unresolvable(f"key {key!r} is not in the bundle's roster")
-            if not collection.present(key):
-                return Unresolvable(f"key {key!r} is absent from the bundle")
-            return Resolvable(collection.at(key))
+            return Unresolvable(f"key {key!r} is absent from the bundle")
         case Unresolvable() as bad:
             return bad
     raise AssertionError("unreachable")  # pragma: no cover
@@ -220,13 +263,10 @@ def decide_relabeled[V](source: Bundle[V], rostermap: RosterMap) -> Resolvabilit
         return decided_source
     if isinstance(decided_map, Unresolvable):
         return decided_map
-    collection, correspondence = decided_source.value, decided_map.value
-    renamed = [key for key in collection.roster if correspondence.maps(key)]
-    images = [correspondence.apply(key) for key in renamed]
-    if len(set(images)) != len(images):
+    transferred = renamed(decided_source.value, decided_map.value)
+    if transferred is None:
         return Unresolvable("relabel collapses distinct keys onto the same target")
-    members = {correspondence.apply(key): collection.members[key] for key in renamed if key in collection.members}
-    return Resolvable(BundleValue(roster=tuple(images), members=members))
+    return Resolvable(transferred)
 
 
 @dataclass(frozen=True, eq=False)

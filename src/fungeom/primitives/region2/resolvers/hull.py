@@ -56,3 +56,38 @@ class BundleHullRegion2(Region2):
         collection = decision.value
         coords = [collection.members[key].coord for key in collection.support()]
         return _hull_of(coords)
+
+
+@dataclass(frozen=True, eq=False)
+class TolerantBundleHullRegion2(Region2):
+    """:class:`BundleHullRegion2` with the degeneracy test made *tolerance-based* rather than exact.
+
+    ``_hull_of`` refuses only what Qhull refuses — points that are collinear or coincident
+    *exactly*. That is the right test when the 2-D points are given; it is the wrong one when they
+    are the **projection** of a 3-D cloud into a chart chosen elsewhere, because a cloud that misses
+    collinearity by a floating-point hair still yields a sliver hull whose area, centroid and
+    boundary are numerical noise. The test here is the same shape as the plane fit's
+    (``fit_plane_coords``): the spread perpendicular to the cloud's principal chart direction must
+    exceed ``tolerance`` times its scale, so *near*-collinear is refused too.
+
+    Used by ``Point3BundleSignal.hull_in``, where the plane comes from outside and may be tilted
+    with respect to the cloud — the case that makes near-collinear projections reachable at all.
+    """
+
+    cloud: Point2Bundle
+    tolerance: float
+
+    def _decide(self) -> Region2Decision:
+        decision = self.cloud.decide()
+        if isinstance(decision, Unresolvable):
+            return decision
+        collection = decision.value
+        coords = [collection.members[key].coord for key in collection.support()]
+        if len(coords) >= 3:
+            points = np.asarray(coords, dtype=float)
+            singular = np.linalg.svd(points - points.mean(axis=0), compute_uv=False)
+            if singular[1] <= self.tolerance * singular[0]:
+                return Unresolvable(
+                    "the points are collinear within tolerance in this chart (no two-dimensional footprint)"
+                )
+        return _hull_of(coords)

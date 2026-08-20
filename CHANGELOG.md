@@ -5,7 +5,207 @@ All notable changes to fungeom are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is derived from git tags
 (`vX.Y.Z`); see [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.8.0] - 2026-08-20
+
+### Added
+
+- **`where(keys | Roster)` and `relabel(RosterMap)` on `Point3BundleSignal` and
+  `TransformBundleSignal`** — the entity-axis ops the static bundles already had, lifted over time.
+  Their absence was an asymmetry with teeth: a *selection* (a marker subset, a patch's vertices, one
+  limb's joints) dropped out of its signal the moment you narrowed it, taking `fit_plane`,
+  `resolve_over` and `FaceSignal` with it, so the only route was to slice the raw array before
+  building the signal and give up composing afterwards.
+
+  `where` is the entity-axis counterpart of `restrict`, which narrows *time*: entity and time are
+  independent axes, so this is a narrowing rather than a rebuild — the time base, the reconstruction
+  kernel and the temporal support all carry through untouched, and narrowing to nothing yields a
+  valid *empty* collection rather than opening a gap. `keep` is decided **once**, not per sample, and
+  a deferred `Roster` propagates. `relabel` carries a whole pose set from source-skeleton to
+  target-skeleton keys at every instant — what retargeting *is* — dropping unmapped keys, carrying
+  the occlusion mask across, and `Unresolvable` when the correspondence collapses two keys onto one.
+
+  The value-level `narrowed` / `renamed` were factored out of `decide_where` / `decide_relabeled` and
+  are shared with the new `decide_where_over_time` / `decide_relabeled_over_time`, so the static and
+  temporal forms cannot drift apart. Concretes: `_Where…BundleSignal`, `_Relabeled…BundleSignal`.
+
+- **`Point3BundleSignal.fit_convex_face(tolerance=…)` → `FaceSignal`** — the *bounded* companion to
+  `fit_plane`, refitting the plane **and** the convex footprint to a deforming cloud at every frame.
+  Bounded is the whole point: an unbounded `PlaneSignal.signed_distance` reports a foot as touching
+  a floor it is two metres to the side of, while a patch's `clearance` measures to the *footprint*.
+  Until now a deforming selection could be given an honest moving plane but never an honest moving
+  patch — only a rigid one, via `FaceSignal.of`, which is a lie for a surface that deforms.
+
+  **`convex` is in the name on purpose.** A hull is a modeling choice — right for a sole or a deck,
+  wrong for a splayed hand whose true footprint is concave — and the membership rule forbids hiding
+  such a choice behind a neutral name.
+
+  Between samples the footprint is the earlier bracket's, on an interpolated plane: a convex hull's
+  vertex count changes from frame to frame, so there is no correspondence to interpolate a footprint
+  along. Values *at* sample instants are exact. Strict, like `fit_plane`: one degenerate frame makes
+  the whole signal `Unresolvable`.
+
+- **`Point3BundleSignal.hull_in(plane, tolerance=…)` → `FaceSignal`** — the general form of the
+  per-frame patch: *this* cloud's convex hull, taken in *that* plane's chart, at every aligned
+  instant. `fit_convex_face` is now literally `hull_in(fit_plane(t), t)`.
+
+  It exists because one vertex set cannot answer both of a patch's questions well. *Where is the
+  surface* wants a genuinely planar sample — the flat weight-bearing core of a sole — because a
+  curved rim dragged into the fit tilts the plane. *How far does it extend* wants to be inclusive —
+  the whole outline, rim included — because a footprint that stops at the core under-reports
+  contact. Fitting the plane on one selection and hulling another is how each question gets the
+  sample it needs, and until now that was expressible only for a *rigid* patch, by hand, as
+  `Face.on(plane_from_A, Region2.hull(B.in_frame(plane_from_A)))`. For a deforming one there was no
+  form at all: `fit_convex_face` fused the two, `FaceSignal.of` takes a *static* `Face`, and there
+  is no `Region2Signal` to carry a footprint on its own.
+
+  Built by composition — per aligned instant, `Face.on(plane.at(t), hull(cloud.at(t) in that
+  chart))` — so it is time-aligned like every other two-signal op (the union of sample instants,
+  clipped to the intersection of supports) and every partiality flows out of the composed resolvers
+  rather than being re-implemented: an unresolvable cloud or plane (including a plane that is
+  unresolvable only *between* its samples, across opposed normals), a frame with fewer than three
+  present points, a wholly occluded frame, disjoint supports.
+
+  **`tolerance` gates the hull here, not only a plane fit.** A plane supplied from outside can be
+  tilted hard against the cloud and project it to a sliver, whose hull's area, centroid and boundary
+  are numerical noise rather than a footprint — reachable precisely because the plane no longer
+  comes from the same points. The test is the same shape as the plane fit's, and refuses
+  *near*-collinear, not merely the exactly-degenerate that Qhull refuses.
+
+### Changed
+
+- **`FaceSignal` is now a facade** over `_TransportedFaceSignal` (the existing rigid patch, built by
+  the unchanged `FaceSignal.of`) and the new `_HulledFaceSignal` (the per-frame patch behind
+  `hull_in` / `fit_convex_face`). Its five batched readbacks reached past the decided value into
+  `.face` / `.pose`, so each now guards on the transported kind and defers to the generic
+  per-instant path otherwise — the fast paths are untouched for rigid patches.
+
+  **`FaceSignal.region()` now decides `Unresolvable` for a per-frame patch.** It remains the static
+  footprint for a transported one, so no existing use changes. A per-frame patch has no single
+  static region, and returning one frame's hull as though it stood for all of them would be exactly
+  the kind of plausible-but-wrong answer this library exists to refuse; ask `at(t).region()` instead.
+
+- **`fit_convex_face` is defined as `hull_in(fit_plane(t), t)`** and no longer has a concrete of its
+  own, so the fused and the general form cannot drift apart. One behavioural consequence, recorded
+  because it reads like a bug and is a decision: as a two-signal op the result is reconstructed the
+  way every lifted signal is — linearly, with an `undefined` boundary — where the old single-signal
+  implementation inherited the source cloud's own kernel and boundary (`fit_plane` still does).
+
+  Measured against the previous implementation rather than argued: **the samples are identical in
+  every case** — same time base, same support, same fitted planes, same hulled footprints — and the
+  only difference is how the patch is read *between* and *past* them, for a cloud built with a
+  non-default kernel. A `via=Interpolation.hold` cloud's patch now lerps its plane between samples
+  instead of selecting the earlier one, and an `outside=Boundary.hold` cloud's patch is now
+  `Unresolvable` past the last sample instead of holding it. Under the default linear / `undefined`
+  reading — what every consumer uses — old and new agree exactly. Re-fuse them only if a patch ever
+  needs to be read with its cloud's kernel.
+
+- **`FaceSignal.clearance`'s eager readback now runs the same kernel as its decided value**, and its
+  results moved by ≤ 1.8e-15. Since 0.2.2 `resolve_over` inverse-transported the query into the
+  static patch frame and split the distance into an out-of-plane height plus a batched GEOS
+  overhang. That is mathematically equal to the per-instant path but a *different algorithm*, and it
+  disagreed with `at(t)` by ~7e-15 relative under a moving pose while its docstring claimed to match
+  it. Both now run one kernel, so the readback and the decided field are the same computation and
+  agree exactly. Deliberate: one algorithm that agrees with itself beats two that agree to within a
+  rounding error. Values under an identity pose are unchanged. (Removes the internal
+  `_transported_clearance` / `_region_lateral_distance` helpers, and with them `signals/face.py`'s
+  dependency on `shapely`.)
+
+- **No change to what a fold means, recorded because the obvious optimization would have changed
+  it.** `ScalarBundleSignal.min` / `max` / `sum` / `mean` / `count` still fold at the source's own
+  sample instants and then reconstruct — *lerp-of-min*. Reducing the batched readback over a target
+  grid instead is *min-of-lerp*, a different function wherever a target falls between the source's
+  samples: for two members that cross, `sig.min().at(0.5)` is `0.0` while the rewrite yields `5.0`.
+  The two coincide only when the target grid *is* the source's knots.
+  `tests/cross_cutting/test_batched_lifts.py` pins the distinction.
+
+### Fixed
+
+- **Bit-exactness was architecture-dependent, and the test asserting it had been failing on
+  x86-64 all along.** A small fixed-size product reaches BLAS three different ways —
+  `np.dot(u, v)`, `matrix @ vector`, `block @ matrix.T` — and BLAS associates each as its kernel
+  and the host architecture prefer, so they can disagree in the last bit. On arm64 macOS they
+  coincide; on x86-64 Linux they do not. `002e9e7` chose scaled column sums for the batched
+  anchoring *deliberately*, but compared them against a per-point path still going through `@`,
+  so the pair agreed only where gemv happened to associate the same way. Its bit-exactness test
+  had failed on Linux since the day it was written; nobody saw it because that branch was never
+  pushed and CI is x86-64 only.
+
+  `dot2` / `dot3` / `norm3` in `fungeom.core.arrays` now fix the order — one written expression,
+  broadcasting over any leading axes, called by the per-item path and its batched twin alike, so
+  the two cannot disagree on any platform. Converted: `RigidTransform.apply_point` /
+  `apply_vector`, `PlaneValue.to_local` / `signed_distance`, `FaceValue.clearance`,
+  `Region2Value._on_segment` / `_closest_on_segment` / `nearest_boundary_point`, the batched
+  stack anchoring, and every `_block` twin. Single-vector normalizations and `approx_equal`
+  comparisons stay on BLAS — they have no batched twin to agree with.
+
+  **This moves values by up to ~1 ulp on x86-64** relative to 0.7.0 (none on arm64), which is the
+  deliberate price: a graph should resolve to a value, not to a value that depends on where it was
+  resolved.
+
+- **A cloud authored in a non-world `frame` read back unanchored.** `Point3BundleSignal`
+  world-anchors its stack at build, but the dense `resolve_over` shortcut returned the *stored*
+  frame-local coordinates — so a cloud in a frame 5 units above a patch reported a clearance of
+  `0.0` rather than `5.0`, while `decide()` reported it correctly. Present since the vectorized
+  readback landed (0.5.0), and it survived this long because the fast path is only taken for a
+  dense carrier and every test of it used the default world frame. The shortcut now anchors the
+  stack before interpolating — anchor-then-lerp, which is also what keeps it bit-identical to the
+  generic path — and defers to that path for an ungrounded frame. Found while unifying the
+  clearance kernels: making `decide()` share the readback promoted this from a `resolve_over`-only
+  wrong answer to a wrong decided value, which is how it finally showed up.
+
+### Performance
+
+- **A cloud measured against a carrier now answers a whole frame at once.**
+  `FaceSignal.clearance(cloud)` and `PlaneSignal.signed_distance(cloud)` built one resolver **per
+  member per instant** when decided, so asking for a *fold* of that field —
+  `clearance(cloud).min()`, strictly less data — cost about **57×** reading the whole unreduced
+  field back. The reduction was never the cost (0.5% of it): the fold simply forces `decide()`, and
+  only `resolve_over` had a batched path beside it.
+
+  The member axis is now answered in arrays, at the `decide()` level rather than in the fold's
+  readback — which is why every consumer of the field got faster, not just folds:
+
+  | 1,000 points × 281 frames | before | after | |
+  | --- | --- | --- | --- |
+  | `clearance(cloud).min().resolve_over(…)` | 15.34 s | 0.16 s | **96×** |
+  | `clearance(cloud).at(t)` | 7.00 s | 0.15 s | **46×** |
+  | the fold, against the unreduced readback | 57× | 1.5× | |
+
+  | 6,074 points × 281 frames (1.7M point-instants) | before | after | |
+  | --- | --- | --- | --- |
+  | `clearance(cloud).min().resolve_over(…)` | 40.78 s | 0.74 s | **55×** |
+  | the fold, against the unreduced readback | 62× | 1.7× | |
+
+  (A fresh signal per measurement, since `decide()` memoizes.) Two independent causes, and the
+  second only became visible once the first was fixed. **The lift no longer decides the cloud at
+  all.** It needs three things from it — when it is sampled, where it is defined, which keys it
+  declares — and was getting them by deciding it in full, which builds a `Point3Value` for every
+  point of every frame: 1.7M objects, two-thirds of the remaining cost, none of them ever read
+  (the coordinates arrive from the dense grid in 64 ms). A cloud is now asked for its **index**
+  via `_sample_index`, which a dense carrier answers from its own `sampling` without touching a
+  coordinate. The alignment rule moved to `aligned_instants`, stated against time bases rather
+  than decided series, so the per-instant `decide_lifted` and the batched lift still cannot drift
+  on *which* instants they answer. An index is deliberately **not** a proof of resolvability: a
+  partiality only the values expose — an ungrounded frame — is reported by the grid readback
+  instead, with the same reason the per-instant path gives.
+
+  What is left is now genuinely the value representation: ~275 ms building the per-frame
+  `BundleValue` dicts and ~240 ms walking `support()` over 1.7M keys in the fold, against ~250 ms
+  of actual geometry. That is the struct-of-arrays floor `docs/collections.md` names, and closing
+  it is a value-type design change — still not one to make under a performance report. New
+  internal `decide_lifted_block` keeps `decide_lifted`'s alignment — factored out as `align_signals`
+  and now shared, so the batched and per-instant lifts cannot drift on *which* instants they answer
+  — and delegates each frame to a batched kernel. New batched value-type methods:
+  `FaceValue.clearance_block` / `closest_point_block`, `Region2Value.contains_block` /
+  `nearest_boundary_block`, `PlaneValue.to_local_block` / `embed_block`; new internal hooks
+  `Point3BundleSignal._sample_index` and `_decided_grid` (the non-raising twin of `resolve_over`).
+
+  **Every one is spelled to be bit-identical to its scalar sibling, not merely close** — the same
+  cross products and `hypot` edge lengths in the even-odd test, `argmin`'s first-minimum matching
+  the scalar loop's strict `<`, length-3 matrix-vector products that associate as the scalar
+  `np.dot` does. Verified against the previous implementation on a **non-convex** footprint under a
+  rotating-and-translating pose (an identity pose hides reassociation; a convex one hides the
+  clamp): decided values, all five folds, `at(t)` and off-knot reconstruction are `array_equal`.
 
 ## [0.7.0] - 2026-08-12
 

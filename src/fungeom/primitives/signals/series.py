@@ -458,18 +458,10 @@ def decide_lifted[U](
     disjoint, or if any aligned combination is. The result is reconstructed linearly
     between the union instants.
     """
-    decided_a, decided_b = a.decide(), b.decide()
-    if isinstance(decided_a, Unresolvable):
-        return decided_a
-    if isinstance(decided_b, Unresolvable):
-        return decided_b
-    kept = intersect(decided_a.value.support.intervals, decided_b.value.support.intervals)
-    if not kept:
-        return Unresolvable("the two signals' supports do not overlap")
-    support = CoverageValue(kept)
-    times = _union_times_in_support(decided_a.value.times, decided_b.value.times, support)
-    if not times:
-        return Unresolvable("the signals share no sample instant within their overlapping support")
+    aligned = align_signals(a, b)
+    if isinstance(aligned, Unresolvable):
+        return aligned
+    times, support = aligned.value
     out: list[U] = []
     for t in times:
         point = at_combined(t).decide()
@@ -478,6 +470,47 @@ def decide_lifted[U](
         out.append(point.value)
     return Resolvable(
         SampledSeries(as_times(times), tuple(out), Interpolation.linear, Boundary.undefined, blend, support)
+    )
+
+
+def aligned_instants(
+    a_times: TimeSeries,
+    a_support: CoverageValue,
+    b_times: TimeSeries,
+    b_support: CoverageValue,
+) -> Resolvability[tuple[list[float], CoverageValue]]:
+    """*When* two sampled things are jointly defined — the alignment rule, stated once.
+
+    The **union** of their sample instants, clipped to the **intersection** of their supports, so
+    the result is defined only where both are. Written against time bases rather than whole decided
+    series precisely so a lift that never materializes one operand's values can still obey exactly
+    the same rule: this is the single definition both :func:`align_signals` and the batched bundle
+    lift call, and the reason they cannot drift on which instants they answer.
+    """
+    kept = intersect(a_support.intervals, b_support.intervals)
+    if not kept:
+        return Unresolvable("the two signals' supports do not overlap")
+    support = CoverageValue(kept)
+    times = _union_times_in_support(a_times, b_times, support)
+    if not times:
+        return Unresolvable("the signals share no sample instant within their overlapping support")
+    return Resolvable((times, support))
+
+
+def align_signals(a: Signal[Any], b: Signal[Any]) -> Resolvability[tuple[list[float], CoverageValue]]:
+    """The shared prologue of every two-signal lift: decide both, then agree on *when*.
+
+    Decides both operands — so either one's partiality is reported here, in operand order — and
+    then applies :func:`aligned_instants`. Unresolvable if either operand is, if the supports are
+    disjoint, or if they share no sample instant inside the overlap.
+    """
+    decided_a, decided_b = a.decide(), b.decide()
+    if isinstance(decided_a, Unresolvable):
+        return decided_a
+    if isinstance(decided_b, Unresolvable):
+        return decided_b
+    return aligned_instants(
+        decided_a.value.times, decided_a.value.support, decided_b.value.times, decided_b.value.support
     )
 
 
@@ -492,13 +525,20 @@ def resolved_rows[V](resampled: Signal[V], to_row: Callable[[V], Any]) -> np.nda
     return np.array([to_row(value) for value in series.values])
 
 
-def resolved_grid(resampled: Signal[Any], to_row: Callable[[Any], Any], fill: Any) -> tuple[np.ndarray, np.ndarray]:
-    """Resolve a (resampled) bundle signal to a dense ``(T, N, ·)`` array plus a ``(T, N)`` present mask.
+def decided_grid(
+    resampled: Signal[Any], to_row: Callable[[Any], Any], fill: Any
+) -> Resolvability[tuple[np.ndarray, np.ndarray]]:
+    """:func:`resolved_grid` as a *decision* — the non-raising form, for use inside a ``_decide``.
 
-    Columns follow the first frame's roster; an absent (occluded) cell holds ``fill`` and its mask
-    entry is ``False``. Resolves eagerly (raising if any frame is off the support).
+    Same dense ``(T, N, ·)`` array and ``(T, N)`` present mask, but an off-support target (or any
+    other partiality of the resampled signal) comes back as ``Unresolvable`` instead of raising.
+    That is what lets a batched readback be reused by a resolver, which must never raise for
+    value-dependent partiality.
     """
-    frames = resampled.resolve().values
+    decided = resampled.decide()
+    if isinstance(decided, Unresolvable):
+        return decided
+    frames = decided.value.values
     roster = frames[0].roster
     rows: list[list[Any]] = []
     masks: list[list[bool]] = []
@@ -510,7 +550,16 @@ def resolved_grid(resampled: Signal[Any], to_row: Callable[[Any], Any], fill: An
             mask_row.append(here)
         rows.append(present)
         masks.append(mask_row)
-    return np.array(rows), np.array(masks, dtype=bool)
+    return Resolvable((np.array(rows), np.array(masks, dtype=bool)))
+
+
+def resolved_grid(resampled: Signal[Any], to_row: Callable[[Any], Any], fill: Any) -> tuple[np.ndarray, np.ndarray]:
+    """Resolve a (resampled) bundle signal to a dense ``(T, N, ·)`` array plus a ``(T, N)`` present mask.
+
+    Columns follow the first frame's roster; an absent (occluded) cell holds ``fill`` and its mask
+    entry is ``False``. Resolves eagerly (raising if any frame is off the support).
+    """
+    return decided_grid(resampled, to_row, fill).unwrap()
 
 
 def dense_grid_brackets(

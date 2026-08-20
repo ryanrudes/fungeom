@@ -18,7 +18,7 @@ from typing import Literal
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from fungeom.core.arrays import freeze
+from fungeom.core.arrays import dot3, freeze
 from fungeom.primitives.vec3.value import Float3, as_vec3
 
 type Mat3 = np.ndarray[tuple[Literal[3], Literal[3]], np.dtype[np.float64]]
@@ -108,13 +108,16 @@ class RigidTransform:
         return self.compose(other)
 
     def apply_point(self, point: Float3) -> Float3:
-        """Transform a *position*: rotated and translated."""
-        p = as_vec3(point)
-        return self.matrix[:3, :3] @ p + self.matrix[:3, 3]
+        """Transform a *position*: rotated and translated.
+
+        Spelled through :func:`~fungeom.core.arrays.dot3` rather than ``@`` so that this and the
+        batched stack anchoring are the same arithmetic in the same order on every platform.
+        """
+        return dot3(self.matrix[:3, :3], as_vec3(point)) + self.matrix[:3, 3]
 
     def apply_vector(self, vector: Float3) -> Float3:
         """Transform a *direction*: rotated only, not translated."""
-        return self.matrix[:3, :3] @ as_vec3(vector)
+        return dot3(self.matrix[:3, :3], as_vec3(vector))
 
     def approx_equal(self, other: RigidTransform, atol: float = 1e-9) -> bool:
         """Numeric comparison of two transforms within ``atol``."""

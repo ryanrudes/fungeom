@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fungeom.core.arrays import freeze
+from fungeom.core.arrays import dot3, freeze
 from fungeom.primitives.transform.value import RigidTransform
 from fungeom.primitives.vec2.value import Float2, as_vec2
 from fungeom.primitives.vec3.value import Float3, as_vec3
@@ -45,7 +45,7 @@ class PlaneValue:
 
     def signed_distance(self, p: Float3) -> float:
         """Signed distance from ``p`` to the plane (positive on the ``normal`` side)."""
-        return float(np.dot(self.normal, as_vec3(p) - self.point))
+        return float(dot3(self.normal, as_vec3(p) - self.point))
 
     def project(self, p: Float3) -> Float3:
         """The orthogonal projection of ``p`` onto the plane."""
@@ -58,25 +58,56 @@ class PlaneValue:
         The plane's intrinsic 2D chart. The gauge (rotation about the normal) is arbitrary
         but fixed by the normal alone — crossing with the coordinate axis least aligned with
         it — so :meth:`to_local` and :meth:`embed` are mutual inverses on the plane.
+
+        **Memoized on first use**, the way a ``Resolver`` memoizes its decision and for the same
+        reason: the chart is a pure function of an immutable normal, but it is asked for once per
+        *point charted* — half a million times for one cloud over one take — so recomputing it is
+        a per-point cost standing in for a constant. Lazily, not in ``__post_init__``: most planes
+        are never charted at all, and two ``np.cross`` calls are not free either. The axes are
+        handed out frozen, like every other array a value type exposes.
         """
-        helper = np.zeros(3)
-        helper[int(np.argmin(np.abs(self.normal)))] = 1.0
-        x = np.cross(self.normal, helper)
-        x = x / float(np.linalg.norm(x))
-        y = np.cross(self.normal, x)
-        return as_vec3(x), as_vec3(y)
+        cached: tuple[Float3, Float3] | None = getattr(self, "_axes", None)
+        if cached is None:
+            helper = np.zeros(3)
+            helper[int(np.argmin(np.abs(self.normal)))] = 1.0
+            x = np.cross(self.normal, helper)
+            x = x / float(np.linalg.norm(x))
+            y = np.cross(self.normal, x)
+            cached = (as_vec3(x), as_vec3(y))
+            freeze(cached[0])
+            freeze(cached[1])
+            object.__setattr__(self, "_axes", cached)
+        return cached
 
     def to_local(self, p: Float3) -> Float2:
         """The 2D coordinates of ``p`` in the plane's chart (orthogonally projected in-plane)."""
         x, y = self.local_axes()
         d = as_vec3(p) - self.point
-        return as_vec2((float(np.dot(d, x)), float(np.dot(d, y))))
+        return as_vec2((float(dot3(d, x)), float(dot3(d, y))))
 
     def embed(self, uv: Float2) -> Float3:
         """The world point at chart coordinates ``uv`` — the inverse of :meth:`to_local` on the plane."""
         x, y = self.local_axes()
         u, v = as_vec2(uv)
         return as_vec3(self.point + u * x + v * y)
+
+    def to_local_block(self, points: np.ndarray) -> np.ndarray:
+        """:meth:`to_local` for a ``(M, 3)`` block of world points at once (→ ``(M, 2)`` chart coords).
+
+        Bit-identical to calling :meth:`to_local` per row — literally the same
+        :func:`~fungeom.core.arrays.dot3` expression, broadcast over the leading axis.
+        """
+        x, y = self.local_axes()
+        d = points - self.point
+        return np.stack([dot3(d, x), dot3(d, y)], axis=-1)
+
+    def embed_block(self, uv: np.ndarray) -> np.ndarray:
+        """:meth:`embed` for a ``(M, 2)`` block of chart coordinates at once (→ ``(M, 3)`` world points).
+
+        Bit-identical to calling :meth:`embed` per row (the same scaled-axis sum, broadcast).
+        """
+        x, y = self.local_axes()
+        return self.point + uv[:, 0:1] * x + uv[:, 1:2] * y
 
     def offset(self, distance: float) -> PlaneValue:
         """A parallel plane shifted ``distance`` along the normal."""

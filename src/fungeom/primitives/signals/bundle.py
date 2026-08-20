@@ -20,15 +20,16 @@ host a bundle value; the base bundle layer never imports signals).
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Sequence
-from dataclasses import dataclass
-from typing import overload
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from fungeom.core.arrays import ArrayLike
+from fungeom.core.arrays import ArrayLike, dot3
 from fungeom.core.resolvability import Resolvability, Resolvable, Unresolvable
 from fungeom.primitives.bundle.decidability import BundleDecision
+from fungeom.primitives.bundle.resolvers.base import kept_keys, narrowed, renamed
 from fungeom.primitives.bundle.resolvers.fit import fit_plane_coords, orient_plane_track
 from fungeom.primitives.bundle.resolvers.point3 import Point3Bundle
 from fungeom.primitives.bundle.resolvers.scalar import ScalarBundle
@@ -43,10 +44,11 @@ from fungeom.primitives.instant.resolvers.base import Instant
 from fungeom.primitives.interval.resolvers.base import Interval
 from fungeom.primitives.interval.value import IntervalValue
 from fungeom.primitives.plane.value import PlaneValue
-from fungeom.primitives.point3.resolvers.base import Point3
-from fungeom.primitives.point3.value import Point3Value
+from fungeom.primitives.point3.value import Point3Value, as_point3_block
+from fungeom.primitives.roster.resolvers.base import Roster
+from fungeom.primitives.rostermap.resolvers.base import RosterMap
 from fungeom.primitives.sampling.resolvers.base import Sampling
-from fungeom.primitives.sampling.value import TimeSeries, as_times
+from fungeom.primitives.sampling.value import SamplingValue, TimeSeries, as_times
 from fungeom.primitives.signals.blend import Blend
 from fungeom.primitives.signals.boundary import Boundary
 from fungeom.primitives.signals.interpolation import Interpolation
@@ -60,6 +62,8 @@ from fungeom.primitives.signals.series import (
     decide_restricted,
     decide_sample,
     decide_warped,
+    decided_grid,
+    aligned_instants,
     dense_grid_brackets,
     dense_grid_readback,
     resolved_grid,
@@ -67,6 +71,10 @@ from fungeom.primitives.signals.series import (
 )
 from fungeom.primitives.signals.plane import PLANE_BLEND, PlaneSignal
 from fungeom.primitives.signals.scalar import SCALAR_BLEND, ScalarSignal
+
+if TYPE_CHECKING:  # the signals.face module imports this one, so the edge is annotation-only
+    from fungeom.primitives.signals.face import FaceSignal
+
 from fungeom.primitives.signals.transform import TRANSFORM_BLEND, TransformSignal
 from fungeom.primitives.timemap.resolvers.base import TimeMap
 from fungeom.primitives.timemap.value import AffineTimeMap
@@ -99,6 +107,42 @@ class _Point3BundleBlend:
 
 
 POINT3_BUNDLE_BLEND = _Point3BundleBlend()
+
+
+def _world_anchor(frame: CoordinateFrame | Frame) -> Resolvability[RigidTransform]:
+    """The frame-to-world transform that every point of a same-framed block shares.
+
+    Exactly the work one ``Point3.at(x, y, z, frame=frame).decide()`` does before it can
+    world-anchor a single point — the grounded check and the parent-chain composition — hoisted
+    out of the per-point loop, because a ``(T, N, 3)`` stack carries *one* frame, not ``T·N`` of
+    them. Both spellings of a frame reduce to the same transform: a deferred :class:`Frame`
+    resolves to an already-world-anchored :class:`CoordinateFrame` (as ``FramedPoint3`` reads
+    it), a frame *value* is checked for grounding here (as ``LocatedPoint3`` does), and either
+    way an ungrounded frame is Unresolvable with the reason a single point would have given.
+    """
+    if isinstance(frame, Frame):
+        decided = frame.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        return Resolvable(decided.value.to_world())
+    if not frame.is_grounded:
+        return Unresolvable(f"frame {frame.name!r} is not grounded to the world")
+    return Resolvable(frame.to_world())
+
+
+def _anchored(block: np.ndarray, anchor: RigidTransform) -> np.ndarray:
+    """A ``(T, N, 3)`` stack of local coordinates carried into the world frame, in one pass.
+
+    The batched form of ``RigidTransform.apply_point``, and **bit-identical to it by construction**:
+    both are the one :func:`~fungeom.core.arrays.dot3` expression, differing only in what they
+    broadcast over. It used to be written as the sum of the rotation's scaled columns and *compared*
+    against a per-point path that still went through ``@`` — which agreed only on architectures
+    where BLAS's gemv happened to associate the same way, and did not on x86-64. Matching a
+    hand-written sum against a BLAS call is a coincidence to be tested for; sharing the expression
+    is a property. The fidelity costs ~17 ms on a stack where the per-point path cost 27 s.
+    """
+    rotation, translation = anchor.matrix[:3, :3], anchor.matrix[:3, 3]
+    return dot3(rotation, block[..., None, :]) + translation
 
 
 def _distributed_support(present: list[int], times: TimeSeries, base: CoverageValue) -> CoverageValue:
@@ -166,6 +210,77 @@ def decide_distributed[V](
     values = tuple(series.values[index].at(key) for index in present)
     support = _distributed_support(present, series.times, series.support)
     return Resolvable(SampledSeries(times, values, series.interpolation, series.boundary, blend, support))
+
+
+def decide_where_over_time[V](
+    source: Signal[BundleValue[V]],
+    keep: tuple[Hashable, ...] | Roster,
+    narrow: Callable[[frozenset[Hashable]], Signal[BundleValue[V]] | None] | None = None,
+) -> Resolvability[SampledSeries[BundleValue[V]]]:
+    """Restrict every sample of a collection-over-time to ``keep`` — the temporal ``where``.
+
+    The entity axis and the time axis are independent, which is the whole reason this is a
+    narrowing rather than a rebuild: keys do not move, so the same key set applies at every
+    instant, and the time base, the reconstruction kernel and the temporal support all carry
+    through untouched. Restricting cannot open a gap — a sample whose keys are all dropped is a
+    valid *empty* collection there, not an undefined one.
+
+    ``keep`` is resolved **once**, not per sample, and an unresolvable :class:`Roster` propagates
+    rather than being forced early.
+
+    ``narrow`` is the optional **pushdown**: a source that can build its series over a subset of
+    its entity axis directly (``_narrowed_to``) returns an equivalent narrowed signal, and this
+    decides *that* instead of deciding the whole collection and discarding most of it. The
+    fallback — decide in full, then narrow each sample — is what a source that cannot push down
+    still gets, and the two agree sample for sample. The pushdown is skipped when the source has
+    already been decided: reading a memoized decision beats recomputing a cheaper one.
+    """
+    decided_keep = kept_keys(keep)
+    if isinstance(decided_keep, Unresolvable):
+        return decided_keep
+    if narrow is not None and source._decided() is None:
+        narrowed_source = narrow(decided_keep.value)
+        if narrowed_source is not None:
+            # Its samples carry only the kept keys already, so there is nothing left to
+            # restrict — and nothing was ever paid for the keys `keep` drops.
+            return narrowed_source.decide()
+    match source.decide():
+        case Resolvable(series):
+            narrow_all = tuple(narrowed(sample, decided_keep.value) for sample in series.values)
+            return Resolvable(replace(series, values=narrow_all))
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def decide_relabeled_over_time[V](
+    source: Signal[BundleValue[V]], mapping: RosterMap
+) -> Resolvability[SampledSeries[BundleValue[V]]]:
+    """Re-key every sample of a collection-over-time — the temporal identity transfer.
+
+    What retargeting *is*, carried across time: a cloud keyed by source-skeleton markers becomes
+    one keyed by target-skeleton joints, at every instant, with each value carried over unchanged
+    and the occlusion mask transferring intact. A correspondence is time-invariant, so it is
+    decided once and applied to each sample.
+
+    **Unresolvable** when the correspondence collapses two declared keys onto one target — the
+    same partiality as the static ``relabel``, reported for the first sample that shows it.
+    """
+    decided_map = mapping.decide()
+    if isinstance(decided_map, Unresolvable):
+        return decided_map
+    match source.decide():
+        case Resolvable(series):
+            transferred: list[BundleValue[V]] = []
+            for sample in series.values:
+                renamed_sample = renamed(sample, decided_map.value)
+                if renamed_sample is None:
+                    return Unresolvable("relabel collapses distinct keys onto the same target")
+                transferred.append(renamed_sample)
+            return Resolvable(replace(series, values=tuple(transferred)))
+        case Unresolvable() as bad:
+            return bad
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
@@ -247,6 +362,46 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         """
         return _DistributedPoint3Signal(source=self, marker=marker)
 
+    def where(self, keys: Sequence[Hashable] | Roster) -> Point3BundleSignal:
+        """The sub-cloud restricted to ``keys``, at every instant (roster and support narrow).
+
+        The entity-axis counterpart of :meth:`restrict`, which narrows *time*. A selection is a
+        set of keys and keys do not move, so one made at any instant applies at all of them —
+        which is what lets a marker subset chosen once (a foot's markers, a patch's vertices)
+        stay the same subset for the whole take. The time base and reconstruction are untouched.
+
+        ``keys`` may be an explicit sequence or a deferred :class:`~fungeom.Roster`.
+        """
+        return _WherePoint3BundleSignal(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """An equivalent signal carrying **only** ``kept`` on the entity axis — the ``where`` pushdown.
+
+        ``None`` (the default here) means "I cannot narrow myself" — :func:`decide_where_over_time`
+        then decides this signal in full and restricts each sample, which is always correct and
+        was for a while the only path. A node that *can* narrow returns a signal whose samples
+        already carry only ``kept``, so a selection of k of N markers costs k rather than N: the
+        stored frame stack narrows by *column*, and a purely temporal wrapper (``restrict`` /
+        ``resample`` / ``reparameterize``) narrows by pushing into its own source, because time
+        ops do not read keys and so commute with an entity-axis restriction.
+
+        The contract is exact agreement, not approximate: the narrowed signal must decide to
+        precisely what narrowing the full decision sample-by-sample would give — *including* its
+        partiality. That is why a node declines (returns ``None``) whenever the keys it would drop
+        could carry partiality of their own; a dropped key must not be able to turn an
+        ``Unresolvable`` into a value.
+        """
+        return None
+
+    def relabel(self, mapping: RosterMap) -> Point3BundleSignal:
+        """Re-key the cloud through ``mapping`` at every instant — the identity transfer over time.
+
+        The temporal form of ``Point3Bundle.relabel``: a trajectory set keyed by *source*
+        entities becomes one keyed by *target* entities, unmapped keys dropping and the occlusion
+        mask carrying across. Unresolvable if the correspondence collapses two keys onto one.
+        """
+        return _RelabeledPoint3BundleSignal(source=self, mapping=mapping)
+
     def resample(self, onto: Sampling) -> Point3BundleSignal:
         """This cloud signal reconstructed onto a new time base."""
         return _ResampledPoint3BundleSignal(source=self, onto=onto)
@@ -290,7 +445,37 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         The vectorized cloud readback: columns follow the roster, an occluded cell is ``nan`` with
         a ``False`` mask. Resolves eagerly (raises if a target is off the support).
         """
-        return resolved_grid(self.resample(onto), lambda value: value.coord, np.full(3, np.nan))
+        return self._decided_grid(onto).unwrap()
+
+    def _decided_grid(self, onto: Sampling) -> Resolvability[tuple[np.ndarray, np.ndarray]]:
+        """:meth:`resolve_over` as a decision — the non-raising readback a ``_decide`` may reuse.
+
+        The single place the dense cloud grid is produced, so the eager public readback and the
+        batched lifts below it are the same computation and cannot drift apart. A carrier that
+        stores its samples densely overrides this with a vectorized shortcut.
+        """
+        return decided_grid(self.resample(onto), lambda value: value.coord, np.full(3, np.nan))
+
+    def _sample_index(self) -> Resolvability[tuple[TimeSeries, CoverageValue, tuple[Hashable, ...]]]:
+        """*When* this cloud is sampled, *where* it is defined, and *which* keys it declares.
+
+        The index of the field without its contents. A batched lift needs only these three things
+        from the cloud it measures — the coordinates come from :meth:`_decided_grid` in one numpy
+        pass — yet deciding the cloud to read them off builds a ``Point3Value`` for every point of
+        every frame, which on a real take is millions of objects the lift never looks at. A carrier
+        that already knows its own time base answers this without materializing anything.
+
+        The default is honest rather than cheap: decide, and read the index off the result. A
+        subclass may override *only* if its index is a genuine constant of the carrier. Overriding
+        does **not** have to reproduce every partiality the full decide would report — an index is
+        not a proof of resolvability, and whatever it omits surfaces from :meth:`_decided_grid`,
+        which the lift calls next and which decides through the ordinary path.
+        """
+        decided = self.decide()
+        if isinstance(decided, Unresolvable):
+            return decided
+        series = decided.value
+        return Resolvable((series.times, series.support, series.values[0].roster))
 
     def fit_plane(self, *, tolerance: float = 1e-6) -> PlaneSignal:
         """The least-squares plane fitted to the cloud at every frame (→ ``PlaneSignal``).
@@ -302,6 +487,68 @@ class Point3BundleSignal(Signal[BundleValue[Point3Value]]):
         near-collinear, or isotropic) makes the whole signal ``Unresolvable``.
         """
         return _FittedPlaneSignal(source=self, tolerance=tolerance)
+
+    def hull_in(self, plane: PlaneSignal, *, tolerance: float = 1e-6) -> FaceSignal:
+        """This cloud's **convex** hull, taken in ``plane``'s chart at every frame (→ ``FaceSignal``).
+
+        The bounded patch whose surface is decided *elsewhere*. Per aligned instant: project this
+        cloud into that plane's two-dimensional chart, hull it, and return the result as a ``Face``
+        bounded on that plane. :meth:`fit_convex_face` is exactly this with the plane fitted from the
+        very same points.
+
+        **Why the plane comes from outside.** One vertex set cannot answer both of a patch's
+        questions well. *Where is the surface* wants a genuinely planar sample — the flat
+        weight-bearing core of a sole — because a curved rim dragged into the fit tilts the plane.
+        *How far does it extend* wants to be inclusive — the whole outline, rim included — because a
+        footprint that stops at the flat core under-reports contact. Fitting the plane on one
+        selection and hulling another is how both get the sample they need, and it is not
+        expressible when the two are fused.
+
+        **Convex is in the name because it is a modeling choice, not a property of the data.** A
+        hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
+        concave; this library will not pick that for you behind a neutral name.
+
+        Time-aligned like every two-signal op: the union of the two signals' sample instants, clipped
+        to the intersection of their supports, read linearly between them. ``Unresolvable`` if either
+        signal is, if their supports are disjoint, or — strictly, at *any* aligned instant — if the
+        cloud has fewer than three present points there or its projection into that instant's chart
+        is collinear within ``tolerance``. That last case is what makes ``tolerance`` earn its place
+        here: a plane tilted steeply against the cloud projects it to something arbitrarily close to
+        a line, whose hull is a sliver of numerical noise rather than a footprint.
+
+        Between samples the footprint is the earlier bracket's, on an interpolated plane — a convex
+        hull's vertex count changes frame to frame, so there is no correspondence to interpolate a
+        footprint along. Values *at* sample instants are exact.
+        """
+        from fungeom.primitives.signals.face import _HulledFaceSignal
+
+        return _HulledFaceSignal(cloud=self, carrier=plane, tolerance=tolerance)
+
+    def fit_convex_face(self, *, tolerance: float = 1e-6) -> FaceSignal:
+        """The **convex** patch fitted to the cloud at every frame (→ ``FaceSignal``).
+
+        The bounded companion to :meth:`fit_plane`, and precisely
+        ``self.hull_in(self.fit_plane(tolerance=t), tolerance=t)`` — per frame, fit the least-squares
+        plane to these points, then hull these same points in that plane's chart. Bounded is the
+        point: an unbounded plane reports a foot as touching a floor it is two metres to the side of,
+        while a patch's ``clearance`` is the honest distance to the *footprint*.
+
+        Use :meth:`hull_in` instead when the plane should be fitted to a *different* selection than
+        the one hulled — the usual case for a real surface, where the flat core that locates the
+        plane is a subset of the outline that bounds it.
+
+        **Convex is in the name because it is a modeling choice, not a property of the data.** A
+        hull is right for a sole or a deck and wrong for a splayed hand, whose true footprint is
+        concave; this library will not pick that for you behind a neutral name.
+
+        Use it where the surface genuinely deforms. For a patch that only *moves* — one rigidly
+        driven by a single bone — ``FaceSignal.of(face, pose)`` fits once and transports, which is
+        exact and far cheaper.
+
+        Strict: a frame whose cloud is degenerate (fewer than three present points, near-collinear,
+        or isotropic) makes the whole signal ``Unresolvable``.
+        """
+        return self.hull_in(self.fit_plane(tolerance=tolerance), tolerance=tolerance)
 
     def centroid(self) -> Point3Signal:
         """The cloud's centroid at every frame (→ ``Point3Signal``) — the CoM / cluster-centre track.
@@ -409,43 +656,106 @@ class _SampledPoint3BundleSignal(Point3BundleSignal):
             case Resolvable(base):
                 if self.frames.shape[0] != base.count:
                     return Unresolvable(f"{self.frames.shape[0]} frames for {base.count} sample times")
+                width = len(self.member_keys)
+                mask = None if self.present is None else self.present[: base.count, :width]
+                # Whether the per-point path would build a single point at all. It is the only
+                # thing an ungrounded frame can spoil, so a stack with nothing present resolves
+                # to empty clouds however detached its frame is — as it does point by point.
+                occupied = base.count > 0 and width > 0 and (mask is None or bool(mask.any()))
+                anchor = _world_anchor(self.frame)
+                if isinstance(anchor, Unresolvable):
+                    if occupied:
+                        return anchor
+                    empty = [BundleValue[Point3Value](roster=self.member_keys, members={}) for _ in range(base.count)]
+                    return Resolvable(self._series(base, empty))
+                world = _anchored(self.frames[:, :width, :], anchor.value)  # the whole stack, once
                 clouds: list[BundleValue[Point3Value]] = []
                 for ti in range(base.count):
-                    members: dict[Hashable, Point3Value] = {}
-                    for ni, key in enumerate(self.member_keys):
-                        if self.present is None or bool(self.present[ti, ni]):
-                            x, y, z = self.frames[ti, ni]
-                            decided = Point3.at(float(x), float(y), float(z), frame=self.frame).decide()
-                            if isinstance(decided, Unresolvable):
-                                return decided
-                            members[key] = decided.value
+                    if mask is None:
+                        members = dict(zip(self.member_keys, as_point3_block(world[ti])))
+                    else:
+                        row = mask[ti]
+                        keys = tuple(key for key, ok in zip(self.member_keys, row) if ok)
+                        members = dict(zip(keys, as_point3_block(world[ti][row])))
                     clouds.append(BundleValue(roster=self.member_keys, members=members))
-                return Resolvable(
-                    SampledSeries(
-                        base.times,
-                        tuple(clouds),
-                        self.interpolation,
-                        self.boundary,
-                        POINT3_BUNDLE_BLEND,
-                        support_from_times(base.times, self.max_gap),
-                    )
-                )
+                return Resolvable(self._series(base, clouds))
             case Unresolvable() as bad:
                 return bad
         raise AssertionError("unreachable")  # pragma: no cover
 
-    def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
-        """Resample onto ``onto`` and resolve to a dense ``(T, N, 3)`` array + ``(T, N)`` present mask.
-
-        The vectorized batch carrier (the cloud analog of ``TransformSignal.from_matrices``): reads
-        the stored ``(T, N, 3)`` frame stack back in one batched numpy interpolation, skipping the
-        per-frame ``Point3`` materialization; falls back to the generic per-instant path for any
-        reconstruction the shortcut does not model.
-        """
-        fast = dense_grid_readback(
-            self.sampling, self.frames, self.present, self.interpolation, self.boundary, self.max_gap, onto
+    def _series(self, base: SamplingValue, clouds: list[BundleValue[Point3Value]]) -> Point3BundleSignal.Value:
+        """This carrier's ``clouds`` over ``base``, with its reconstruction and temporal support."""
+        return SampledSeries(
+            base.times,
+            tuple(clouds),
+            self.interpolation,
+            self.boundary,
+            POINT3_BUNDLE_BLEND,
+            support_from_times(base.times, self.max_gap),
         )
-        return fast if fast is not None else super().resolve_over(onto)
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """This frame stack with only ``kept``'s **columns** — the leaf of the ``where`` pushdown.
+
+        Sound because a ``(T, N, 3)`` float array has no per-member partiality to lose: the only
+        way one of these carriers is Unresolvable is its sampling, its frame-count mismatch, or
+        its (single, shared) frame being ungrounded — none of which a column selection can change.
+        The one exception is the last: an ungrounded frame bites only when *some* point is built,
+        so narrowing to keys that are never present could turn that ``Unresolvable`` into empty
+        clouds. This declines in that case and lets the full decide report it, as it does today.
+        """
+        if isinstance(_world_anchor(self.frame), Unresolvable):
+            return None
+        columns = [ni for ni, key in enumerate(self.member_keys) if key in kept]
+        return replace(
+            self,
+            frames=self.frames[:, columns, :],
+            member_keys=tuple(self.member_keys[ni] for ni in columns),
+            present=None if self.present is None else self.present[:, columns],
+        )
+
+    def _decided_grid(self, onto: Sampling) -> Resolvability[tuple[np.ndarray, np.ndarray]]:
+        """The dense cloud readback, vectorized (the cloud analog of ``TransformSignal.from_matrices``).
+
+        Reads the stored ``(T, N, 3)`` frame stack back in one batched numpy interpolation, skipping
+        the per-frame ``Point3`` materialization; falls back to the generic per-instant path for any
+        reconstruction the shortcut does not model.
+
+        **The stack is world-anchored first, exactly as :meth:`_decide` anchors it.** A cloud may be
+        authored in a non-world ``frame``, and its samples are world-anchored at build; reading the
+        raw stored coordinates back would hand out frame-local positions under a world-anchored
+        contract — a silently wrong answer wherever the frame is not the identity. Anchoring *before*
+        the bracket interpolation (rather than after) is also what keeps this bit-identical to the
+        generic path, which lerps values that are already anchored. An ungrounded frame defers to
+        that path, which owns the "ungrounded, but nothing present" case.
+        """
+        anchor = _world_anchor(self.frame)
+        if isinstance(anchor, Unresolvable):
+            return super()._decided_grid(onto)
+        width = len(self.member_keys)
+        world = _anchored(self.frames[:, :width, :], anchor.value)
+        present = None if self.present is None else self.present[:, :width]
+        fast = dense_grid_readback(self.sampling, world, present, self.interpolation, self.boundary, self.max_gap, onto)
+        return Resolvable(fast) if fast is not None else super()._decided_grid(onto)
+
+    def _sample_index(self) -> Resolvability[tuple[TimeSeries, CoverageValue, tuple[Hashable, ...]]]:
+        """The index straight off the carrier — its own sampling, gap policy and key tuple.
+
+        A dense frame stack *is* its index: the time base is the ``sampling`` it was built with, the
+        support is that base under ``max_gap``, and the roster is ``member_keys``. None of the three
+        depends on a single coordinate, so none of the ``T·N`` points need building. The frame-count
+        check is kept because it decides whether this carrier has a coherent time base at all; the
+        one partiality not repeated here — an ungrounded frame — is caught by ``_decided_grid``,
+        which defers to the per-instant path and reports it identically.
+        """
+        match self.sampling.decide():
+            case Resolvable(base):
+                if self.frames.shape[0] != base.count:
+                    return Unresolvable(f"{self.frames.shape[0]} frames for {base.count} sample times")
+                return Resolvable((base.times, support_from_times(base.times, self.max_gap), self.member_keys))
+            case Unresolvable() as bad:
+                return bad
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 @dataclass(frozen=True, eq=False)
@@ -471,12 +781,39 @@ class _DistributedPoint3Signal(Point3Signal):
 
 
 @dataclass(frozen=True, eq=False)
+class _WherePoint3BundleSignal(Point3BundleSignal):
+    """The cloud signal ``source`` restricted to the ``keep`` keys at every instant."""
+
+    source: Point3BundleSignal
+    keep: tuple[Hashable, ...] | Roster
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_where_over_time(self.source, self.keep, narrow=self.source._narrowed_to)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledPoint3BundleSignal(Point3BundleSignal):
+    """The cloud signal ``source`` re-keyed through ``mapping`` at every instant."""
+
+    source: Point3BundleSignal
+    mapping: RosterMap
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
+        return decide_relabeled_over_time(self.source, self.mapping)
+
+
+@dataclass(frozen=True, eq=False)
 class _ResampledPoint3BundleSignal(Point3BundleSignal):
     source: Point3BundleSignal
     onto: Sampling
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
         return decide_resampled(self.source, self.onto)
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """Narrowed by pushing into the source: re-timing never reads a key, so the two commute."""
+        narrowed_source = self.source._narrowed_to(kept)
+        return None if narrowed_source is None else replace(self, source=narrowed_source)
 
 
 @dataclass(frozen=True, eq=False)
@@ -489,6 +826,11 @@ class _ReparameterizedPoint3BundleSignal(Point3BundleSignal):
             return decide_warped(self.source, self.by)
         return decide_reparameterized(self.source, self.by)
 
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """Narrowed by pushing into the source: warping the time base never reads a key, so the two commute."""
+        narrowed_source = self.source._narrowed_to(kept)
+        return None if narrowed_source is None else replace(self, source=narrowed_source)
+
 
 @dataclass(frozen=True, eq=False)
 class _RestrictedPoint3BundleSignal(Point3BundleSignal):
@@ -497,6 +839,11 @@ class _RestrictedPoint3BundleSignal(Point3BundleSignal):
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[Point3Value]]]:
         return decide_restricted(self.source, self.to)
+
+    def _narrowed_to(self, kept: frozenset[Hashable]) -> Point3BundleSignal | None:
+        """Narrowed by pushing into the source: clipping the support never reads a key, so the two commute."""
+        narrowed_source = self.source._narrowed_to(kept)
+        return None if narrowed_source is None else replace(self, source=narrowed_source)
 
 
 class _TransformBundleBlend:
@@ -651,6 +998,24 @@ class TransformBundleSignal(Signal[BundleValue[RigidTransform]]):
         orientations). Unresolvable to build if ``j`` is absent from the roster or never present.
         """
         return _DistributedTransformSignal(source=self, joint=joint)
+
+    def where(self, keys: Sequence[Hashable] | Roster) -> TransformBundleSignal:
+        """The sub-set of joints restricted to ``keys``, at every instant.
+
+        The entity-axis counterpart of :meth:`restrict`. Selecting the joints that drive one limb
+        is a narrowing of the pose set, not a rebuild of it: the time base, the SE(3) blend and
+        the temporal support all carry through unchanged.
+        """
+        return _WhereTransformBundleSignal(source=self, keep=keys if isinstance(keys, Roster) else tuple(keys))
+
+    def relabel(self, mapping: RosterMap) -> TransformBundleSignal:
+        """Re-key the pose set through ``mapping`` at every instant — **what retargeting is**.
+
+        A pose set keyed by *source*-skeleton joints becomes one keyed by *target*-skeleton
+        joints, each pose carried across the correspondence unchanged and every unmapped joint
+        dropped. Unresolvable if the correspondence is not injective over this roster.
+        """
+        return _RelabeledTransformBundleSignal(source=self, mapping=mapping)
 
     def resample(self, onto: Sampling) -> TransformBundleSignal:
         """This pose-set signal reconstructed onto a new time base."""
@@ -840,6 +1205,28 @@ class _TransformBundleSampleAt(TransformBundle):
 
 
 @dataclass(frozen=True, eq=False)
+class _WhereTransformBundleSignal(TransformBundleSignal):
+    """The pose signal ``source`` restricted to the ``keep`` joints at every instant."""
+
+    source: TransformBundleSignal
+    keep: tuple[Hashable, ...] | Roster
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        return decide_where_over_time(self.source, self.keep)
+
+
+@dataclass(frozen=True, eq=False)
+class _RelabeledTransformBundleSignal(TransformBundleSignal):
+    """The pose signal ``source`` re-keyed through ``mapping`` at every instant."""
+
+    source: TransformBundleSignal
+    mapping: RosterMap
+
+    def _decide(self) -> Resolvability[SampledSeries[BundleValue[RigidTransform]]]:
+        return decide_relabeled_over_time(self.source, self.mapping)
+
+
+@dataclass(frozen=True, eq=False)
 class _ResampledTransformBundleSignal(TransformBundleSignal):
     source: TransformBundleSignal
     onto: Sampling
@@ -912,6 +1299,65 @@ def decide_folded[U](
         out.append(reduced.value)
     return Resolvable(
         SampledSeries(series.times, tuple(out), series.interpolation, series.boundary, blend, series.support)
+    )
+
+
+def decide_lifted_block[C](
+    carrier: Signal[C],
+    cloud: Point3BundleSignal,
+    block: Callable[[C, np.ndarray], Resolvability[np.ndarray]],
+) -> Resolvability[SampledSeries[BundleValue[float]]]:
+    """:func:`decide_lifted` with the *member* axis batched — a cloud measured against a carrier.
+
+    Identical in meaning to lifting ``carrier.at(t) ⊕ cloud.at(t)`` per instant: the same
+    :func:`aligned_instants` time base and support, the same per-instant carrier value, the same
+    resulting roster and occlusion. What differs is only *how* a frame is computed — the cloud is
+    read back as one dense ``(T, N, 3)`` grid and ``block(value, points)`` answers a whole frame's
+    members in arrays, instead of building N resolvers per instant. That is the difference between
+    a contact field costing one numpy pass per frame and costing ``T·N`` trips through the static
+    algebra, and it is why this exists as a separate helper rather than an optimization inside
+    :func:`decide_lifted`, which cannot know that a member-wise op batches.
+
+    ``block`` returns ``Unresolvable`` for a frame it cannot answer (an empty patch has no surface
+    to measure to), exactly as the per-instant resolver would, so partiality still propagates.
+    Occluded members are ``nan`` in the grid and simply omitted from the frame's bundle.
+    """
+    decided_carrier = carrier.decide()
+    if isinstance(decided_carrier, Unresolvable):
+        return decided_carrier
+    carrier_series = decided_carrier.value
+    shape = cloud._sample_index()  # the cloud's when/where/which — no points materialized
+    if isinstance(shape, Unresolvable):
+        return shape
+    cloud_times, cloud_support, roster = shape.value
+    aligned = aligned_instants(carrier_series.times, carrier_series.support, cloud_times, cloud_support)
+    if isinstance(aligned, Unresolvable):
+        return aligned
+    times, support = aligned.value
+    grid = cloud._decided_grid(Sampling.at_times(times))
+    if isinstance(grid, Unresolvable):
+        # This is where a cloud that cannot be read at all reports it. The index above is
+        # deliberately not a proof of resolvability — a dense carrier answers it from its own
+        # sampling without touching a coordinate — so a partiality that only the values expose
+        # (an ungrounded frame, say) arrives here, from the same per-instant path that would
+        # have raised it, with the same reason.
+        return grid
+    points, mask = grid.value
+    frames: list[BundleValue[float]] = []
+    for index, t in enumerate(times):
+        sampled = carrier_series.sample(t)
+        if isinstance(sampled, Unresolvable):
+            return sampled
+        row = block(sampled.value, points[index])
+        if isinstance(row, Unresolvable):
+            return row
+        values = row.value
+        members = {key: float(values[column]) for column, key in enumerate(roster) if mask[index, column]}
+        frames.append(BundleValue(roster=roster, members=members))
+    return Resolvable(
+        SampledSeries(
+            as_times(times), tuple(frames), Interpolation.linear, Boundary.undefined, SCALAR_BUNDLE_BLEND, support
+        )
     )
 
 
@@ -1133,6 +1579,16 @@ class _RestrictedScalarBundleSignal(ScalarBundleSignal):
         return decide_restricted(self.source, self.to)
 
 
+def _plane_signed_distance_block(plane: PlaneValue, points: np.ndarray) -> Resolvability[np.ndarray]:
+    """One frame's signed distances from a ``(N, 3)`` point block to ``plane`` — ``n · (qₖ − p₀)``.
+
+    Bit-identical to :meth:`PlaneValue.signed_distance` per point: a length-3 matrix-vector product
+    sums in the same order as the scalar dot it replaces.
+    """
+    distances: np.ndarray = dot3(plane.normal, points - plane.point)
+    return Resolvable(distances)
+
+
 @dataclass(frozen=True, eq=False)
 class _PlaneClearanceBundleSignal(ScalarBundleSignal):
     """Per-marker signed distance from a moving cloud to a moving plane — the clearance field over time."""
@@ -1141,9 +1597,7 @@ class _PlaneClearanceBundleSignal(ScalarBundleSignal):
     cloud: Point3BundleSignal
 
     def _decide(self) -> Resolvability[SampledSeries[BundleValue[float]]]:
-        return decide_lifted(
-            self.plane, self.cloud, lambda t: self.plane.at(t).signed_distance(self.cloud.at(t)), SCALAR_BUNDLE_BLEND
-        )
+        return decide_lifted_block(self.plane, self.cloud, _plane_signed_distance_block)
 
     def resolve_over(self, onto: Sampling) -> tuple[np.ndarray, np.ndarray]:
         """Resample onto ``onto`` and resolve to a dense ``(T, N)`` signed-distance array + present mask.

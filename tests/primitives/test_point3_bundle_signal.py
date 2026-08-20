@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from fungeom import (
+    RosterMap,
+    Roster,
     Boundary,
     CoordinateFrame,
     Instant,
@@ -19,6 +22,7 @@ from fungeom import (
     Unresolvable,
     UnresolvableError,
 )
+from fungeom.primitives.frame.value import WORLD_FRAME
 from fungeom.values import CoverageValue, IntervalValue, SampledSeries
 
 
@@ -316,3 +320,102 @@ def test_centroid_is_the_cloud_centre_track() -> None:
         [0.0, 1.0], [[[0, 0, 0]], [[1, 0, 0]]], keys=["a"], present=[[False], [True]]
     )
     assert isinstance(occluded.centroid().decide(), Unresolvable)
+
+
+def test_where_narrows_the_entity_axis_at_every_instant() -> None:
+    """A selection is a set of keys, and keys do not move — so one choice holds for all time."""
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0],
+        [[[0, 0, 0], [1, 0, 0], [2, 0, 0]], [[0, 1, 0], [1, 1, 0], [2, 1, 0]]],
+        keys=["heel", "toe", "hand"],
+    )
+    foot = cloud.where(["heel", "toe"])
+    assert sorted(foot.at(0.0).resolve().roster) == ["heel", "toe"]
+    assert sorted(foot.at(1.0).resolve().roster) == ["heel", "toe"]
+    # the values that survive are untouched, and the time base is unchanged
+    assert foot.at(1.0).at("toe").resolve().coord.tolist() == cloud.at(1.0).at("toe").resolve().coord.tolist()
+    assert foot.over().resolve() == cloud.over().resolve()
+
+
+def test_where_accepts_a_deferred_roster() -> None:
+    cloud = Point3BundleSignal.from_frames([0.0, 1.0], [[[0, 0, 0], [5, 0, 0]], [[0, 1, 0], [5, 1, 0]]])
+    assert sorted(cloud.where(Roster.of([1])).at(0.0).resolve().roster) == [1]
+
+
+def test_where_keeps_a_dropped_out_key_absent_rather_than_inventing_it() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0],
+        [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]],
+        present=[[True, False], [True, True]],
+        keys=["a", "b"],
+    )
+    kept = cloud.where(["b"])
+    assert kept.at(0.0).resolve().roster == ("b",)
+    assert not kept.at(0.0).present("b").resolve(), "occlusion survives the narrowing"
+    assert kept.at(1.0).present("b").resolve()
+
+
+def test_where_a_key_the_cloud_never_had_yields_an_empty_but_valid_cloud() -> None:
+    """Narrowing cannot open a *temporal* gap: an empty cloud is defined, not undefined."""
+    cloud = Point3BundleSignal.from_frames([0.0, 1.0], [[[0, 0, 0]], [[0, 1, 0]]], keys=["a"])
+    empty = cloud.where(["nobody"])
+    assert empty.is_resolvable
+    assert empty.at(0.0).resolve().roster == ()
+
+
+def test_relabel_carries_the_cloud_across_a_correspondence() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0], [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]], keys=["src_heel", "src_toe"]
+    )
+    moved = cloud.relabel(RosterMap.of({"src_heel": "HEEL", "src_toe": "TOE"}))
+    assert sorted(moved.at(1.0).resolve().roster) == ["HEEL", "TOE"]
+    assert moved.at(1.0).at("TOE").resolve().coord.tolist() == cloud.at(1.0).at("src_toe").resolve().coord.tolist()
+
+
+def test_relabel_drops_unmapped_keys_and_refuses_to_collapse_two() -> None:
+    cloud = Point3BundleSignal.from_frames(
+        [0.0, 1.0], [[[0, 0, 0], [1, 0, 0]], [[0, 1, 0], [1, 1, 0]]], keys=["a", "b"]
+    )
+    assert sorted(cloud.relabel(RosterMap.of({"a": "A"})).at(0.0).resolve().roster) == ["A"]
+    collapsed = cloud.relabel(RosterMap.of({"a": "X", "b": "X"})).decide()
+    assert isinstance(collapsed, Unresolvable)
+    assert "collapses" in collapsed.reason
+
+
+def test_the_batched_anchoring_is_bit_identical_to_per_point_anchoring() -> None:
+    """A ``(T, N, 3)`` stack is world-anchored once, not once per point — and to the same bits.
+
+    The carrier used to build a whole ``Point3`` resolver per point per frame just to apply the
+    frame's transform, which is one transform for the entire stack. Hoisting it is a performance
+    change, and a performance change that perturbs coordinates is a different change: this
+    re-derives the answer with the *old* per-point spelling, written out here rather than
+    imported, and demands exact equality — not ``allclose``.
+
+    This test failed on x86-64 for as long as it existed and nobody saw it, because the branch it
+    was written on was never pushed and every local run was arm64. Any spelling that reaches BLAS
+    fails it on some platform; the carrier and ``apply_point`` now share one ``dot3`` expression,
+    which is what makes exact equality a property rather than a coincidence.
+    """
+    from fungeom.primitives.transform.value import RigidTransform
+
+    rng = np.random.default_rng(20260814)
+    rotation = Rotation.from_euler("xyz", [0.3, -1.1, 2.4]).as_matrix()
+    placed = np.eye(4)
+    placed[:3, :3], placed[:3, 3] = rotation, [7.0, -2.0, 0.5]
+    rig = WORLD_FRAME.child("rig", RigidTransform(placed)).child("tool", RigidTransform(placed))
+
+    for scale in (1.0, 1e-9, 1e9):
+        frames = rng.normal(size=(4, 6, 3)) * scale
+        mask = rng.random((4, 6)) > 0.25
+        signal = Point3BundleSignal.from_frames(
+            np.arange(4) / 30.0, frames, keys=tuple("abcdef"), frame=rig, present=mask
+        )
+        for ti, cloud in enumerate(signal.resolve().values):
+            for ni, key in enumerate(tuple("abcdef")):
+                if not mask[ti, ni]:
+                    assert not cloud.present(key)
+                    continue
+                x, y, z = frames[ti, ni]
+                expected = Point3.at(float(x), float(y), float(z), frame=rig).resolve()
+                assert np.array_equal(cloud.members[key].coord, expected.coord)
+                assert cloud.members[key].frame is expected.frame

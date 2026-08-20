@@ -174,3 +174,26 @@ def test_transformed_by_moves_point_and_rotates_normal() -> None:
     # rotate 90° about x: the +z normal rotates to -y (rotation only, no translation drift of the normal)
     spun = g.transformed_by(Transform.rotation(Direction3.of(1, 0, 0), np.pi / 2)).resolve()
     assert np.allclose(spun.normal, [0, -1, 0], atol=1e-9)
+
+
+def test_local_axes_are_computed_once_and_handed_out_frozen() -> None:
+    """The chart is a constant of the plane, and charting a cloud asks for it once per point.
+
+    Recomputing it per point made ``fit_convex_face`` spend two ``np.cross`` calls half a
+    million times for one answer, so it is memoized. Two things must hold for that to be safe:
+    the same plane must keep giving the same axes, and the axes it gives away must be read-only
+    (a cached array a caller can write to is a cache a caller can corrupt).
+    """
+    plane = PlaneValue(point=np.array([0.0, 0.0, 5.0]), normal=np.array([0.0, 0.0, 2.0]))
+    first_x, first_y = plane.local_axes()
+    second_x, second_y = plane.local_axes()
+
+    assert first_x is second_x and first_y is second_y
+    assert np.allclose(np.cross(first_x, first_y), plane.normal)  # right-handed, x × y = normal
+    with pytest.raises(ValueError):
+        first_x[0] = 99.0
+
+    # A distinct plane gets its own chart, and the round trip still inverts.
+    tilted = PlaneValue(point=np.array([1.0, 0.0, 0.0]), normal=np.array([1.0, 1.0, 0.0]))
+    assert tilted.local_axes()[0] is not first_x
+    assert np.allclose(tilted.embed(tilted.to_local(np.array([1.0, 0.0, 4.0]))), [1.0, 0.0, 4.0])
