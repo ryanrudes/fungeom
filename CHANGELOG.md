@@ -5,7 +5,7 @@ All notable changes to fungeom are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is derived from git tags
 (`vX.Y.Z`); see [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.8.1] - 2026-08-20
 
 ### Performance
 
