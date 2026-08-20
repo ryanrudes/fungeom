@@ -5,6 +5,34 @@ All notable changes to fungeom are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is derived from git tags
 (`vX.Y.Z`); see [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Performance
+
+- **`where` narrows the readbacks too, not just `decide`.** Since 0.7.0 a `where`-narrowed cloud
+  paid for the *whole* cloud everywhere except `decide`: the entity-axis pushdown existed, but the
+  batched lift's two entry points — the cloud's index and its dense grid — both fell through to the
+  generic path, which materializes the full collection and then discards most of it. Measured
+  downstream: narrowing to 38% of a 6,074-vertex board bought **3%**, while the same cloud built
+  dense ran 2.4× faster.
+
+  `_WherePoint3BundleSignal` now takes the same pushdown its `_decide` already had, for
+  `_sample_index` and `_decided_grid` alike, memoized because narrowing copies the kept columns and
+  both readbacks want the result.
+
+  | 6,074 → 2,304 keys, 281 frames (min of 5) | 0.8.0 | now |
+  | --- | --- | --- |
+  | `where(...).clearance(...).min().resolve_over(…)` | 0.876 s | **0.323 s** |
+  | against the same cloud built dense | 2.63× | **1.05×** |
+
+  A selection now costs the selection. Values are bit-identical to the equivalent dense cloud —
+  this is a narrowing, not a recomputation — and the un-narrowed path is untouched.
+
+  Unlike `decide_where_over_time`, the readbacks do **not** skip the pushdown when the source is
+  already decided. That rule exists because reading a memoized decision beats re-deciding; these
+  callers want no decision at all, and a dense carrier answers its index without touching a
+  coordinate, which is cheaper than any series already built.
+
 ## [0.8.0] - 2026-08-20
 
 ### Added

@@ -28,6 +28,7 @@ from fungeom import (
     PlaneValue,
     Point3,
     Point2,
+    Point3Bundle,
     Point3BundleSignal,
     Region2,
     Region2Value,
@@ -411,6 +412,86 @@ def test_an_ungrounded_frame_surfaces_from_the_grid_rather_than_the_index() -> N
     decided = _still_patch(stamps).clearance(loose).decide()
     assert isinstance(decided, Unresolvable)  # ...but the lift is not
     assert decided.reason == loose.decide().reason  # and it reports what the per-instant path would
+
+
+# --- a selection costs the selection, on the readbacks too ----------------------------------------
+
+
+@pytest.fixture
+def point_blocks(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Row counts of every bulk point-block built — the cost of a cloud, counted not timed."""
+    from fungeom.primitives.point3.value import as_point3_block
+    from fungeom.primitives.signals import bundle as bundle_module
+
+    built: list[int] = []
+
+    def counting(coords: np.ndarray) -> Any:
+        built.append(len(coords))
+        return as_point3_block(coords)
+
+    monkeypatch.setattr(bundle_module, "as_point3_block", counting)
+    return built
+
+
+def _clearance_over(cloud: Point3BundleSignal, stamps: Any) -> Any:
+    patch = Face.on(Plane.through(Point3.at(0, 0, 0), Direction3.of(0, 0, 1)), Region2.rectangle(40, 40))
+    poses = TransformSignal.from_matrices(stamps, np.tile(np.eye(4), (len(stamps), 1, 1)))
+    return FaceSignal.of(patch, poses).clearance(cloud)
+
+
+def test_a_narrowed_cloud_builds_no_points_at_all_for_a_batched_lift(point_blocks: list[int]) -> None:
+    """``where`` used to save nothing here: the lift's index and grid both decided the full cloud.
+
+    The pushdown ``decide_where_over_time`` already had is now taken by the readbacks too, and for a
+    dense carrier that means the batched path never materializes a ``Point3`` — so the honest
+    acceptance is a *zero*, counted rather than timed.
+    """
+    stamps = np.linspace(0.0, 1.0, 6)
+    positions = np.random.default_rng(31).uniform(-3.0, 3.0, (6, 8, 3))
+    cloud = Point3BundleSignal.from_frames(stamps, positions, keys=list("abcdefgh"))
+    _clearance_over(cloud.where(list("abc")), stamps).min().resolve_over(Sampling.at_times(stamps))
+    assert point_blocks == []  # it was the whole 8-key cloud at every frame
+
+
+def test_a_narrowed_cloud_answers_exactly_what_the_same_cloud_built_dense_answers() -> None:
+    """The pushdown is a narrowing, not a re-computation — bit for bit, not merely close."""
+    stamps = np.linspace(0.0, 1.0, 12)
+    positions = np.random.default_rng(37).uniform(-3.0, 3.0, (12, 10, 3))
+    keys = list("abcdefghij")
+    kept = keys[:4]
+
+    narrowed = _clearance_over(Point3BundleSignal.from_frames(stamps, positions, keys=keys).where(kept), stamps)
+    dense = _clearance_over(Point3BundleSignal.from_frames(stamps, positions[:, :4, :], keys=kept), stamps)
+    onto = Sampling.at_times(stamps)
+    assert np.array_equal(narrowed.min().resolve_over(onto), dense.min().resolve_over(onto))
+    assert np.array_equal(narrowed.resolve_over(onto)[0], dense.resolve_over(onto)[0])
+    assert narrowed.resolve().values[0].roster == tuple(kept)  # and the roster narrowed with it
+
+
+def test_a_source_that_declines_to_narrow_falls_back_rather_than_inventing_an_index() -> None:
+    """An ungrounded frame makes the carrier refuse the pushdown; the lift must not paper over it."""
+    from fungeom.primitives.frame.value import CoordinateFrame
+
+    stamps = [0.0, 1.0]
+    loose = Point3BundleSignal.from_frames(
+        stamps, np.zeros((2, 3, 3)), keys=list("abc"), frame=CoordinateFrame.detached("loose")
+    )
+    narrowed = loose.where(["a"])
+    assert narrowed._pushed_down() is None  # the carrier declined
+    decided = _clearance_over(narrowed, stamps).decide()
+    assert isinstance(decided, Unresolvable)
+
+
+def test_an_unresolvable_roster_stops_a_narrowed_lift() -> None:
+    """``keep`` is a resolver too — an unresolvable selection is not a selection of nothing."""
+    from fungeom.primitives.frame.value import CoordinateFrame
+
+    stranded = Point3Bundle.from_map({"a": Point3.at(0, 0, 0, frame=CoordinateFrame.detached("loose"))})
+    stamps = [0.0, 1.0]
+    cloud = Point3BundleSignal.from_frames(stamps, np.zeros((2, 3, 3)), keys=list("abc"))
+    narrowed = cloud.where(stranded.support())
+    assert narrowed._pushed_down() is None  # nothing to narrow *to* yet
+    assert isinstance(_clearance_over(narrowed, stamps).decide(), Unresolvable)
 
 
 def test_a_hulled_patch_still_measures_without_a_static_face_to_batch_against() -> None:

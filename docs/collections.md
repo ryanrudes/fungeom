@@ -451,6 +451,14 @@ propagation tests, README/CHECKLIST rows, 100 % coverage, `ruff`/`mypy --strict`
   library. Cost: values move up to ~1 ulp on platforms where BLAS was reassociating (none on
   arm64). Taken deliberately — a graph should resolve to a value, not to a value that depends on
   where it was resolved.
+- **A pushdown has to reach the readbacks, not just `decide` (2026-08-20).** `where`'s entity-axis
+  pushdown had been in `decide_where_over_time` since the first perf pass, and a narrowed cloud
+  still paid for the whole cloud — because the batched lift never calls `decide` on it. It asks for
+  the cloud's *index* and its *dense grid*, and both fell through to the generic path. The lesson
+  generalizes past this one node: **once a fast path exists beside a slow one, every new entry point
+  has to be taught about it, and the ones that forget are invisible** — the answers stay right, only
+  the cost is wrong. `where` narrowing to 38% of a cloud bought 3% for two releases before anyone
+  measured it. Now: 0.876 s → 0.323 s, and 1.05× the equivalent dense cloud rather than 2.63×.
 - **`resolve_over` was unified onto that same kernel, and this moved values (2026-08-20).**
   It previously inverse-transported the query into the static patch's frame and split the
   distance via a GEOS lateral term — mathematically equal to the per-instant path but a
